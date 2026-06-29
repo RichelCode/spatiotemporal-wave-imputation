@@ -1,0 +1,28 @@
+# Data directories (keep the dirs, ignore their contents)
+data/raw/*
+data/interim/*
+data/processed/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+
+# CSV files (except those under reports/)
+*.csv
+!reports/**/*.csv
+
+# Model artifacts
+*.pypots
+*.pt
+*.ckpt
+checkpoints/
+
+# Python caches
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# OS / editor files
+.DS_Store
+.vscode/
