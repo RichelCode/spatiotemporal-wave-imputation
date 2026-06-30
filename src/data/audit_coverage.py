@@ -83,8 +83,8 @@ def assign_basin(lat: Optional[float], lon: Optional[float]) -> str:
     prime meridian. Documented boxes:
 
       Great Lakes   : 40.5..49.5 N, -93..-76      (inland, distinct from coasts)
-      Gulf          : 17..31 N,    -98..-80        (Gulf of Mexico)
-      S. Atlantic   : 24..35 N,    -82..-73        (FL/GA/SC to Cape Hatteras)
+      Gulf          : 17..31 N,    -98..-81.5      (Gulf of Mexico, west of FL peninsula)
+      S. Atlantic   : 24..35 N,    -81.5..-73      (FL Atlantic coast / GA / SC to Hatteras)
       Mid-Atlantic  : 35..40.5 N,  -78..-69        (Hatteras to NY Bight)
       NE            : 40.5..45 N,  -72..-65        (New England / Gulf of Maine)
       W. Coast      : 30..49.5 N,  -130..-116      (CA/OR/WA shelf)
@@ -96,9 +96,9 @@ def assign_basin(lat: Optional[float], lon: Optional[float]) -> str:
 
     if 40.5 <= lat <= 49.5 and -93 <= lon <= -76:
         return "Great Lakes"
-    if 17 <= lat <= 31 and -98 <= lon <= -80:
+    if 17 <= lat <= 31 and -98 <= lon <= -81.5:
         return "Gulf"
-    if 24 <= lat <= 35 and -82 <= lon <= -73:
+    if 24 <= lat <= 35 and -81.5 <= lon <= -73:
         return "S. Atlantic"
     if 35 < lat <= 40.5 and -78 <= lon <= -69:
         return "Mid-Atlantic"
