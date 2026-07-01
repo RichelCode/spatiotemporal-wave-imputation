@@ -21,3 +21,8 @@ audit:
   coverage_grid: [0.5, 0.6, 0.7, 0.8, 0.9]
   min_years_grid: [2, 3, 4]
   sentinels: [99.0, 999.0, 9999.0]   # NDBC missing-value codes, stripped before counting
+
+graph:
+  k_neighbors: 8                       # kNN graph degree (before symmetrization)
+  sigma_heuristic: "local_self_tuning"  # σ_i = distance to i's k-th NN; weight = exp(-d^2 / (σ_i·σ_j))
+  basin_aware: true                    # also build a variant that zeros cross-basin edges
