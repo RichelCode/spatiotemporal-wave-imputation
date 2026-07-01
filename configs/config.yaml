@@ -26,3 +26,11 @@ graph:
   k_neighbors: 8                       # kNN graph degree (before symmetrization)
   sigma_heuristic: "local_self_tuning"  # σ_i = distance to i's k-th NN; weight = exp(-d^2 / (σ_i·σ_j))
   basin_aware: true                    # also build a variant that zeros cross-basin edges
+
+deep:
+  window_hours: 48        # temporal window length W (non-overlapping windows)
+  batch_size: 64
+  max_epochs: 100
+  patience: 10            # early-stopping patience (epochs without val improvement)
+  learning_rate: 0.001
+  device: auto            # auto -> MPS if available, else CUDA, else CPU
