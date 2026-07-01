@@ -1,0 +1,30 @@
+# Documented manual corrections to station metadata where the NDBC source
+# (activestations.xml) is internally inconsistent (station name vs coordinate).
+# Applied in src/data/select_stations.py so the frozen set carries them; the
+# basin is re-derived from the corrected coordinate. Keep coverage_audit.csv as
+# the raw crawl record (uncorrected); corrections live downstream of it.
+
+coordinate_corrections:
+  "51003":
+    lat: 19.289
+    lon: -160.569
+    reason: >
+      activestations.xml lists lat=26.8172, lon=134.8660 (western Pacific, near
+      Japan), which contradicts the station name "WESTERN HAWAII - 205 NM SW of
+      Honolulu, HI". Corrected to the documented historical Western Hawaii
+      mooring position (~19.29 N, 160.57 W). Basin is re-derived from the
+      corrected coordinate (-> Pacific Is.). Value is approximate; refine if an
+      authoritative NDBC position is available.
+    source: "NDBC station 51003 historical Western Hawaii mooring position"
+
+# Explicit basin reassignments (applied AFTER coordinate corrections). Use when
+# the lat/lon is correct but the bounding-box basin tag is not appropriate.
+basin_overrides:
+  "46006":
+    basin: "W. Coast"
+    reason: >
+      SOUTHEAST PAPA is a US West-Coast deep-ocean buoy at lon -137.4, just west
+      of the W. Coast bounding box (eastern edge -130), so the box tags it
+      Other/Intl. Its eight nearest neighbours are all W. Coast; reassigning it
+      connects it to that cluster and removes the sole isolated node in the
+      basin-aware spatial graph.
