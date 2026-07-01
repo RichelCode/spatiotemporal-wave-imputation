@@ -29,7 +29,7 @@ graph:
 
 deep:
   window_hours: 48        # temporal window length W (non-overlapping windows)
-  batch_size: 64
+  batch_size: 256
   max_epochs: 100
   patience: 10            # early-stopping patience (epochs without val improvement)
   learning_rate: 0.001
