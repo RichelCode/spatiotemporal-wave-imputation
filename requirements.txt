@@ -1,3 +1,9 @@
+# PyG companion wheels (torch-scatter / torch-sparse) are hosted here, not on
+# PyPI; without this line a bare `pip install` attempts a source build. These
+# wheels are built for torch 2.3.0 (ABI-compatible with our torch 2.3.1) and
+# include osx-arm64 (universal2) builds.
+--find-links https://data.pyg.org/whl/torch-2.3.0+cpu.html
+
 numpy==1.26.4
 pandas==2.2.2
 scipy==1.13.1
@@ -10,3 +16,14 @@ pypots==0.7.1
 torch==2.3.1
 tqdm==4.66.4
 pyarrow==16.1.0
+
+# --- Spatiotemporal graph modelling (tsl / GRIN) ---
+torch-spatiotemporal==0.9.5
+torch-geometric==2.8.0
+# torch-scatter / torch-sparse are compiled PyG companions that tsl imports but
+# does NOT declare in its metadata. They have no arm64 wheels on PyPI, so they
+# must come from the PyG wheel index above. Explicit install command:
+#   pip install torch-scatter==2.1.2 torch-sparse==0.6.18 \
+#     -f https://data.pyg.org/whl/torch-2.3.0+cpu.html
+torch-scatter==2.1.2
+torch-sparse==0.6.18
