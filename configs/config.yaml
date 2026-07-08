@@ -30,7 +30,8 @@ graph:
 deep:
   window_hours: 48        # temporal window length W (non-overlapping windows)
   batch_size: 256
-  max_epochs: 100
+  max_epochs: 50          # capped training budget (early stopping may fire sooner)
   patience: 10            # early-stopping patience (epochs without val improvement)
   learning_rate: 0.001
   device: auto            # auto -> MPS if available, else CUDA, else CPU
+  seed: 0                 # torch/numpy seed for reproducible deep-model training
