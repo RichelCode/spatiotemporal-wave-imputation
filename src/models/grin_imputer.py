@@ -40,16 +40,16 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from tsl.nn.models.stgn.grin_model import GRINModel
 
 from ..data.download import load_config
-from ..evaluation.masking import load_masks, make_model_input, score
+from ..evaluation.masking import TARGET_FEATURES, load_masks, make_model_input, score
 from ..features.preprocess import inverse_transform, load_meta
-from .baselines import load_truth
+from .baselines import _config_key, load_truth
 from .deep_common import (
-    DeepImputer, build_training_windows, evaluate_deep_model, reassemble,
-    select_device, window_series,
+    DeepImputer, build_training_windows, reassemble, select_device, window_series,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,9 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 GRAPH_NPZ = PROCESSED_DIR / "wave_graph.npz"
 AXES_JSON = PROCESSED_DIR / "wave_tensor_axes.json"
 GRIN_RESULTS_CSV = PROJECT_ROOT / "reports" / "grin_imputation_results.csv"
+GRIN_CHECKPOINT = PROCESSED_DIR / "grin_checkpoint.pt"          # gitignored (*.pt)
+GRIN_OUTAGE_NPZ = PROCESSED_DIR / "grin_outage_imputations.npz"  # gitignored artifact
+GRIN_PER_VICTIM_CSV = PROJECT_ROOT / "reports" / "grin_per_victim_outage.csv"  # analysis data (commits)
 
 # GRIN batches WHOLE-NETWORK windows [B, W, 140, 3], so the batch is far heavier
 # than SAITS's per-station samples; the config's batch_size=256 is inappropriate
@@ -103,13 +106,15 @@ class GRINImputer(DeepImputer):
                  hidden_size: int = 32, ff_size: int = 64, embedding_size: int = 8,
                  n_layers: int = 1, kernel_size: int = 2,
                  epochs: int | None = None, patience: int | None = -1,
-                 batch_size: int = GRIN_BATCH_SIZE, whiten_prob: float = WHITEN_PROB):
+                 batch_size: int = GRIN_BATCH_SIZE, whiten_prob: float = WHITEN_PROB,
+                 seed: int | None = None):
         deep = config["deep"]
         self.W = int(deep["window_hours"])
         self.lr = float(deep["learning_rate"])
         self.epochs = int(epochs if epochs is not None else deep["max_epochs"])
         self.patience = deep["patience"] if patience == -1 else patience
         self.device = device if device is not None else select_device(deep)
+        self.seed = int(seed if seed is not None else deep.get("seed", config["project"]["seed"]))
         self.batch_size = int(batch_size)
         self.whiten_prob = float(whiten_prob)
         self.arch = dict(hidden_size=hidden_size, ff_size=ff_size,
@@ -125,7 +130,27 @@ class GRINImputer(DeepImputer):
         out = self.model(x_in, ei, edge_weight=ew, mask=mask)
         return out[0] if isinstance(out, (tuple, list)) else out
 
+    def _seed(self) -> None:
+        """Fix torch/numpy RNGs for reproducibility (MPS is best-effort)."""
+        np.random.seed(self.seed)
+        torch.manual_seed(self.seed)
+        if self.device.type == "mps" and hasattr(torch, "mps"):
+            torch.mps.manual_seed(self.seed)
+        logger.info("seeded torch/numpy with seed=%d", self.seed)
+
+    def save_checkpoint(self, path=GRIN_CHECKPOINT) -> None:
+        """Save the trained model state_dict (reproducible from seed+script)."""
+        torch.save(self.model.state_dict(), path)
+        logger.info("saved GRIN checkpoint -> %s", path)
+
+    def load_checkpoint(self, path=GRIN_CHECKPOINT, n_features: int = 3) -> "GRINImputer":
+        """Rebuild the model and load a saved state_dict (skips retraining)."""
+        self.model = self._build_model(n_features).to(self.device)
+        self.model.load_state_dict(torch.load(path, map_location=self.device))
+        return self
+
     def fit(self, train_windows, val_windows) -> "GRINImputer":
+        self._seed()
         dev = self.device
         F = train_windows.values.shape[3]
         self.model = self._build_model(F).to(dev)
@@ -214,16 +239,24 @@ class GRINImputer(DeepImputer):
 # full evaluation
 # ---------------------------------------------------------------------------
 def run_full_evaluation() -> int:
-    """Fit GRIN once on clean 2021-2024 (MPS), evaluate all masks, save CSV."""
+    """Canonical GRIN run: seeded, capped, checkpointed, per-victim instrumented.
+
+    Fits GRIN once on clean 2021-2024, saves the checkpoint, then imputes every
+    mask ONCE — collecting the aggregated results (all 24 masks), the per-victim
+    station errors for the station-outage masks, and the outage imputed tensors
+    (so downstream analyses re-score without re-imputing).
+    """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     config = load_config()
     meta = load_meta()
     truth = load_truth()
     observed = ~np.isnan(truth)
     W = int(config["deep"]["window_hours"])
+    station_ids = list(json.load(open(AXES_JSON))["station_ids"])
 
     device = select_device(config["deep"])
-    print(f"Device: {device} | graph=adjacency_knn_basin | batch_size={GRIN_BATCH_SIZE} "
+    seed = int(config["deep"].get("seed", config["project"]["seed"]))
+    print(f"Device: {device} | graph=adjacency_knn_basin | seed={seed} | batch_size={GRIN_BATCH_SIZE} "
           f"max_epochs={config['deep']['max_epochs']} patience={config['deep']['patience']}")
 
     train, val = build_training_windows(truth, observed, meta, W)
@@ -232,16 +265,52 @@ def run_full_evaluation() -> int:
     t0 = time.time()
     model.fit(train, val)
     fit_time = time.time() - t0
-    print(f"training device: {device} | fit time: {fit_time / 60:.1f} min")
+    model.save_checkpoint(GRIN_CHECKPOINT)
+    print(f"training device: {device} | fit time: {fit_time / 60:.1f} min | checkpoint saved")
 
+    # Impute every mask ONCE; capture aggregated + per-victim + outage tensors.
     t1 = time.time()
-    agg = evaluate_deep_model(model, save_path=GRIN_RESULTS_CSV)
+    overall, per_victim, outage_imputations = [], [], {}
+    for i, mask in enumerate(load_masks(), start=1):
+        logger.info("[%d/24] impute+score %s", i, mask.id)
+        imputed = model.impute(make_model_input(truth, mask))
+        res = score(imputed, mask, meta, truth)
+        cfg = _config_key(mask)
+        for tgt in TARGET_FEATURES:
+            if tgt not in res["overall"]:
+                continue
+            for metric, value in res["overall"][tgt].items():
+                if metric == "n":
+                    continue
+                overall.append({"baseline": "grin", "config": cfg, "mechanism": mask.mechanism,
+                                "seed": mask.seed, "target": tgt, "metric": metric, "value": value})
+        if mask.mechanism == "station_outage":
+            outage_imputations[mask.id] = imputed.astype(np.float32)
+            for s_idx, entry in res["per_victim"].items():
+                for tgt, mets in entry.items():
+                    for metric in ("MAE", "RMSE"):
+                        per_victim.append({
+                            "station_id": station_ids[s_idx], "station_idx": int(s_idx),
+                            "config": cfg, "seed": mask.seed, "target": tgt,
+                            "metric": metric, "value": mets[metric], "n_cells": mets["n"],
+                        })
     eval_time = time.time() - t1
+
+    # Aggregated results (same schema as the other model CSVs).
+    agg = (pd.DataFrame(overall)
+           .groupby(["baseline", "config", "mechanism", "target", "metric"])["value"]
+           .agg(["mean", "std", "count"]).reset_index().rename(columns={"count": "n_seeds"}))
+    agg.to_csv(GRIN_RESULTS_CSV, index=False)
+    pd.DataFrame(per_victim).to_csv(GRIN_PER_VICTIM_CSV, index=False)
+    np.savez_compressed(GRIN_OUTAGE_NPZ, **outage_imputations)
 
     total = fit_time + eval_time
     print(f"\nWall-clock: fit {fit_time / 60:.1f} min + eval {eval_time / 60:.1f} min "
           f"= {total / 60:.1f} min total")
     print(f"Wrote {GRIN_RESULTS_CSV}")
+    print(f"Wrote {GRIN_PER_VICTIM_CSV}  ({len(per_victim)} rows)")
+    print(f"Wrote {GRIN_OUTAGE_NPZ}  ({len(outage_imputations)} outage masks)")
+    print(f"Wrote {GRIN_CHECKPOINT}")
     return 0
 
 
