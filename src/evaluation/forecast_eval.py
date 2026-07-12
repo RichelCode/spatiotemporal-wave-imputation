@@ -83,11 +83,12 @@ def complete_tensor_with_grin(device=None, force: bool = False) -> np.ndarray:
 
 
 def valid_origin_mask(observed_feature: np.ndarray, test_start: int, test_end: int,
-                      L: int = INPUT_WINDOW) -> np.ndarray:
-    """Boolean [T, S] of leakage-safe test origins for one target feature.
+                      L: int = INPUT_WINDOW, h: int = HORIZON) -> np.ndarray:
+    """Boolean [T, S] of leakage-safe test origins for one target feature, horizon h.
 
-    Origin t is valid iff t is in the test period, the window [t-L+1, t] is fully
-    observed, and the target y_{t+1} is observed. (b) + (a) of the leakage rule.
+    Origin t is valid iff t is in the test period, the input window [t-L+1, t] is
+    fully observed, and the target y_{t+h} is observed and in the test period.
+    ((b) + (a) of the leakage rule, generalised to h steps ahead.)
     """
     T, S = observed_feature.shape
     obs_int = observed_feature.astype(np.int64)
@@ -100,11 +101,10 @@ def valid_origin_mask(observed_feature: np.ndarray, test_start: int, test_end: i
     window_full = (window_count == L) & (t >= L - 1)[:, None]
 
     target_ok = np.zeros((T, S), dtype=bool)
-    target_ok[:-1] = observed_feature[1:]             # y_{t+1} observed
+    target_ok[:-h] = observed_feature[h:]             # y_{t+h} observed
 
     origin_range = np.zeros(T, dtype=bool)
-    origin_range[test_start:test_end - 1] = True       # t in [test_start, test_end-2]
-
+    origin_range[test_start:test_end - h] = True       # t s.t. t+h in the test period
     return window_full & target_ok & origin_range[:, None]
 
 
