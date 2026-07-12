@@ -38,16 +38,29 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_CSV = PROJECT_ROOT / "reports" / "forecast_baseline_results.csv"
+HORIZON_SWEEP_CSV = PROJECT_ROOT / "reports" / "forecast_horizon_sweep.csv"
 AR_ORDER = 24  # AR(p); equals ARIMA(p,0,0). Requires p <= INPUT_WINDOW.
+HORIZONS = [1, 3, 6, 12, 24]  # hours ahead for the sweep
 
 
 def fit_ar(series: np.ndarray, p: int) -> np.ndarray | None:
-    """Least-squares AR(p) with intercept on a continuous series. Returns [c, phi_1..phi_p]."""
+    """1-step least-squares AR(p) with intercept. Returns [c, phi_1..phi_p]."""
+    return fit_ar_direct(series, p, 1)
+
+
+def fit_ar_direct(series: np.ndarray, p: int, h: int) -> np.ndarray | None:
+    """Direct h-step AR(p): predict y_i from y_{i-h}..y_{i-h-p+1}. Returns [c, phi_1..phi_p].
+
+    Prediction is y_hat_{t+h} = c + sum_k phi_k y_{t-k+1}, i.e. from the last p
+    values in the observed window (identical predictor set for every horizon;
+    only the coefficients differ). h=1 reproduces the standard 1-step AR.
+    """
     n = len(series)
-    if n <= p + 2 or not np.all(np.isfinite(series)):
+    i0 = h + p - 1
+    if n <= i0 + 2 or not np.all(np.isfinite(series)):
         return None
-    y = series[p:]
-    cols = [np.ones(n - p)] + [series[p - k - 1: n - k - 1] for k in range(p)]  # intercept + lag1..lagp
+    y = series[i0:]
+    cols = [np.ones(n - i0)] + [series[p - 1 - k: n - h - k] for k in range(p)]
     x = np.column_stack(cols)
     coef, *_ = np.linalg.lstsq(x, y, rcond=None)
     return coef
@@ -118,8 +131,107 @@ def run() -> int:
     return 0
 
 
+def _predict_all(raw, completed, obs, f, h, test_start, test_end, train_end):
+    """Return (n_origins, y_true, {method: pred}) for one target feature + horizon."""
+    valid = valid_origin_mask(obs[:, :, f], test_start, test_end, INPUT_WINDOW, h)
+    ts, ss = np.where(valid)
+    y_true = raw[ts + h, ss, f]
+    pred_pers = raw[ts, ss, f]                       # y_t
+    pred_seas = raw[ts + h - 24, ss, f]              # same hour, previous day of the TARGET
+    coefs = {int(s): fit_ar_direct(completed[:train_end, s, f], AR_ORDER, h) for s in np.unique(ss)}
+    lagmat = np.column_stack([raw[ts - k, ss, f] for k in range(AR_ORDER)])
+    C = np.array([coefs[int(s)] if coefs[int(s)] is not None else np.zeros(AR_ORDER + 1) for s in ss])
+    pred_ar = C[:, 0] + np.einsum("nk,nk->n", lagmat, C[:, 1:])
+    none = np.array([coefs[int(s)] is None for s in ss])
+    pred_ar[none] = pred_pers[none]
+    return len(ts), y_true, {"persistence": pred_pers, "seasonal_naive": pred_seas, "ar24": pred_ar}
+
+
+def make_horizon_figure(df: pd.DataFrame) -> list[str]:
+    """Persistence MAE vs horizon (both targets), AR(24) overlaid -> fig10."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from ..features.eda import FIG_DIR, TARGET_COLORS, set_style
+    set_style()
+    unit = {"WVHT": "m", "APD": "s"}
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
+    for ax, tgt in zip(axes, FORECAST_TARGETS):
+        color = TARGET_COLORS[tgt]
+        pers = df[(df.target == tgt) & (df.method == "persistence")].sort_values("horizon")
+        ar = df[(df.target == tgt) & (df.method == "ar24")].sort_values("horizon")
+        ax.plot(pers.horizon, pers.MAE, "-o", color=color, label="persistence")
+        ax.plot(ar.horizon, ar.MAE, "--s", color="black", markerfacecolor="white", label="AR(24)")
+        ax.set_xticks(HORIZONS)
+        ax.set_xlabel("forecast horizon (hours)")
+        ax.set_ylabel(f"{tgt} MAE ({unit[tgt]})")
+        ax.set_title(tgt)
+        ax.legend()
+    fig.suptitle("Figure 10. Forecast error vs horizon (persistence vs AR(24))", fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    FIG_DIR.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for ext in ("png", "pdf"):
+        p = FIG_DIR / f"fig10_horizon_skill.{ext}"
+        fig.savefig(p)
+        saved.append(p.name)
+    plt.close(fig)
+    return saved
+
+
+def run_horizon_sweep() -> int:
+    """Re-run the baselines at h = 1, 3, 6, 12, 24; write CSV + fig10; print table."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    meta = load_meta()
+    feats = meta["feature_names"]
+    test_start = int(meta["split"]["test"]["start"])
+    test_end = int(meta["split"]["test"]["end"])
+    train_end = int(meta["split"]["train"]["end"])
+    raw = np.load(RAW_TENSOR_NPZ)["tensor"].astype(np.float64)
+    obs = ~np.isnan(raw)
+    completed = complete_tensor_with_grin().astype(np.float64)
+
+    records = []
+    for tgt in FORECAST_TARGETS:
+        f = feats.index(tgt)
+        for h in HORIZONS:
+            n, y_true, preds = _predict_all(raw, completed, obs, f, h, test_start, test_end, train_end)
+            mae_pers = mae(preds["persistence"], y_true)
+            for name, pred in preds.items():
+                m = mae(pred, y_true)
+                records.append({"method": name, "target": tgt, "horizon": h, "n_origins": n,
+                                "MAE": m, "RMSE": rmse(pred, y_true),
+                                "skill_vs_persistence": skill_vs_persistence(m, mae_pers)})
+            logger.info("%s h=%2d: n=%d  pers MAE=%.4f  ar24 MAE=%.4f",
+                        tgt, h, n, mae_pers, mae(preds["ar24"], y_true))
+
+    df = pd.DataFrame(records)
+    HORIZON_SWEEP_CSV.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(HORIZON_SWEEP_CSV, index=False)
+    saved = make_horizon_figure(df)
+
+    unit = {"WVHT": "m", "APD": "s"}
+    print("\n" + "=" * 78)
+    print("FORECAST HORIZON SWEEP (leakage-safe; physical units; test period 2025)")
+    print("=" * 78)
+    print(f"{'target':6s}{'h':>4s}{'n_origins':>11s}{'pers MAE':>10s}{'AR24 MAE':>10s}"
+          f"{'pers RMSE':>11s}{'AR24 skill':>12s}")
+    for tgt in FORECAST_TARGETS:
+        for h in HORIZONS:
+            pers = df[(df.target == tgt) & (df.horizon == h) & (df.method == "persistence")].iloc[0]
+            ar = df[(df.target == tgt) & (df.horizon == h) & (df.method == "ar24")].iloc[0]
+            print(f"{tgt:6s}{h:>4d}{int(pers['n_origins']):>11,d}{pers['MAE']:>10.4f}{ar['MAE']:>10.4f}"
+                  f"{pers['RMSE']:>11.4f}{ar['skill_vs_persistence']:>+12.3f}   ({unit[tgt]})")
+    print(f"\nWrote {HORIZON_SWEEP_CSV} and {', '.join(saved)}")
+    return 0
+
+
 def main() -> int:
-    return run()
+    import argparse
+    parser = argparse.ArgumentParser(description="Classical forecast baselines.")
+    parser.add_argument("--sweep", action="store_true", help="Run the horizon sweep (h=1,3,6,12,24).")
+    args = parser.parse_args()
+    return run_horizon_sweep() if args.sweep else run()
 
 
 if __name__ == "__main__":
