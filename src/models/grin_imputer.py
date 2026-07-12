@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import gc
 import json
 import logging
 import time
@@ -62,6 +63,12 @@ GRIN_RESULTS_CSV = PROJECT_ROOT / "reports" / "grin_imputation_results.csv"
 GRIN_CHECKPOINT = PROCESSED_DIR / "grin_checkpoint.pt"          # gitignored (*.pt)
 GRIN_OUTAGE_NPZ = PROCESSED_DIR / "grin_outage_imputations.npz"  # gitignored artifact
 GRIN_PER_VICTIM_CSV = PROJECT_ROOT / "reports" / "grin_per_victim_outage.csv"  # analysis data (commits)
+
+# Multi-seed + basin ablation outputs
+GRIN_RUNS_DIR = PROCESSED_DIR / "grin_runs"                     # gitignored per-run intermediates
+GRIN_MULTISEED_CSV = PROJECT_ROOT / "reports" / "grin_multiseed_results.csv"
+GRAPH_ABLATION_CSV = PROJECT_ROOT / "reports" / "graph_ablation_results.csv"
+GRIN_MULTISEED_PV_CSV = PROJECT_ROOT / "reports" / "grin_multiseed_per_victim.csv"
 
 # GRIN batches WHOLE-NETWORK windows [B, W, 140, 3], so the batch is far heavier
 # than SAITS's per-station samples; the config's batch_size=256 is inappropriate
@@ -315,6 +322,137 @@ def run_full_evaluation() -> int:
 
 
 # ---------------------------------------------------------------------------
+# multi-seed + basin-vs-plain ablation
+# ---------------------------------------------------------------------------
+def _impute_and_collect(model, truth, meta, station_ids, tags: dict):
+    """Impute all 24 masks once; return (overall_records, per_victim_records), tagged."""
+    overall, victims = [], []
+    for i, mask in enumerate(load_masks(), start=1):
+        logger.info("    [%d/24] %s", i, mask.id)
+        res = score(model.impute(make_model_input(truth, mask)), mask, meta, truth)
+        cfg = _config_key(mask)
+        for tgt in TARGET_FEATURES:
+            if tgt not in res["overall"]:
+                continue
+            for metric, value in res["overall"][tgt].items():
+                if metric == "n":
+                    continue
+                overall.append({**tags, "config": cfg, "mechanism": mask.mechanism,
+                                "mask_seed": mask.seed, "target": tgt, "metric": metric, "value": value})
+        if mask.mechanism == "station_outage":
+            for s_idx, entry in res["per_victim"].items():
+                for tgt, mets in entry.items():
+                    for metric in ("MAE", "RMSE"):
+                        victims.append({**tags, "station_id": station_ids[s_idx], "station_idx": int(s_idx),
+                                        "config": cfg, "mask_seed": mask.seed, "target": tgt,
+                                        "metric": metric, "value": mets[metric], "n_cells": mets["n"]})
+    return overall, victims
+
+
+def _build_ablation(multiseed: pd.DataFrame) -> pd.DataFrame:
+    """basin-aware vs plain: does basin's advantage exceed the combined seed noise?"""
+    rows = []
+    keys = multiseed[["config", "mechanism", "target", "metric"]].drop_duplicates()
+    for _, k in keys.iterrows():
+        def cell(graph):
+            r = multiseed[(multiseed["graph"] == graph) & (multiseed["config"] == k["config"])
+                          & (multiseed["target"] == k["target"]) & (multiseed["metric"] == k["metric"])]
+            return (float(r["mean"].iloc[0]), float(r["std"].iloc[0])) if len(r) else (np.nan, np.nan)
+        bm, bs = cell("adjacency_knn_basin")
+        pm, ps = cell("adjacency_knn")
+        advantage = pm - bm  # lower error is better -> positive means basin-aware wins
+        combined = float(np.sqrt(np.nan_to_num(bs) ** 2 + np.nan_to_num(ps) ** 2))
+        rows.append({"config": k["config"], "mechanism": k["mechanism"], "target": k["target"],
+                     "metric": k["metric"], "basin_mean": bm, "basin_std": bs,
+                     "plain_mean": pm, "plain_std": ps, "basin_advantage": advantage,
+                     "combined_std": combined, "exceeds_noise": bool(abs(advantage) > combined)})
+    return pd.DataFrame(rows)
+
+
+def run_multiseed_ablation(seeds=(0, 1, 2),
+                           graphs=("adjacency_knn_basin", "adjacency_knn")) -> int:
+    """Capped GRIN over every (graph, seed); resumable, checkpointed, then aggregate.
+
+    Each run is written to disk the moment it finishes, so a crash never loses a
+    completed run (on restart, completed (graph, seed) pairs are skipped).
+    """
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    config = load_config()
+    meta = load_meta()
+    truth = load_truth()
+    observed = ~np.isnan(truth)
+    W = int(config["deep"]["window_hours"])
+    device = select_device(config["deep"])
+    station_ids = list(json.load(open(AXES_JSON))["station_ids"])
+    train, val = build_training_windows(truth, observed, meta, W)
+    GRIN_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"multi-seed ablation: device={device} seeds={list(seeds)} graphs={list(graphs)} "
+          f"| {len(seeds) * len(graphs)} runs, capped {config['deep']['max_epochs']} epochs")
+
+    run_specs = [(g, s) for g in graphs for s in seeds]
+    n_runs = len(run_specs)
+    for run_num, (graph, seed) in enumerate(run_specs, start=1):
+        glabel = "basin-aware" if graph == "adjacency_knn_basin" else "plain"
+        tag = f"{graph}_seed{seed}"
+        agg_p = GRIN_RUNS_DIR / f"{tag}_agg.csv"
+        pv_p = GRIN_RUNS_DIR / f"{tag}_pv.csv"
+        ckpt = PROCESSED_DIR / f"grin_checkpoint_{tag}.pt"
+        if agg_p.exists() and pv_p.exists():
+            print(f"[{run_num}/{n_runs}] seed={seed} {glabel} SKIPPED (already complete)", flush=True)
+            continue
+        logger.info("=== RUN [%d/%d] %s ===", run_num, n_runs, tag)
+        t0 = time.time()
+        model = GRINImputer(config, device=device, adjacency=graph, seed=seed)
+        model.fit(train, val)
+        model.save_checkpoint(ckpt)
+        overall, victims = _impute_and_collect(
+            model, truth, meta, station_ids, {"graph": graph, "model_seed": seed})
+        pd.DataFrame(overall).to_csv(agg_p, index=False)   # crash-safe: persist immediately
+        pd.DataFrame(victims).to_csv(pv_p, index=False)
+
+        so = [r["value"] for r in overall if r["config"] == "station_outage_full"
+              and r["target"] == "WVHT" and r["metric"] == "MAE"]
+        so_wvht = float(np.mean(so)) if so else float("nan")
+        print(f"[{run_num}/{n_runs}] seed={seed} {glabel} done | "
+              f"station-outage WVHT MAE={so_wvht:.3f} | {(time.time() - t0) / 60:.1f} min", flush=True)
+
+        del model
+        gc.collect()
+        if device.type == "mps" and hasattr(torch, "mps"):
+            torch.mps.empty_cache()
+
+    _consolidate_runs(seeds, graphs)
+    return 0
+
+
+def _consolidate_runs(seeds=(0, 1, 2),
+                      graphs=("adjacency_knn_basin", "adjacency_knn")) -> pd.DataFrame:
+    """Aggregate saved per-run results into the multi-seed headline + ablation.
+
+    Two-step so error bars reflect MODEL-SEED variability (not pooled model x mask,
+    which would conflate the two and overstate independence since the mask suite
+    is FIXED across model seeds):
+      1. within each (graph, model_seed, config, target, metric), average over the
+         3 fixed mask seeds -> one number per model seed;
+      2. across the 3 model seeds, take mean +/- std  (n_model_seeds = 3).
+    """
+    raw = pd.concat([pd.read_csv(GRIN_RUNS_DIR / f"{g}_seed{s}_agg.csv")
+                     for g in graphs for s in seeds], ignore_index=True)
+    per_seed = (raw.groupby(["graph", "model_seed", "config", "mechanism", "target", "metric"])
+                ["value"].mean().reset_index())
+    multiseed = (per_seed.groupby(["graph", "config", "mechanism", "target", "metric"])["value"]
+                 .agg(["mean", "std", "count"]).reset_index()
+                 .rename(columns={"count": "n_model_seeds"}))
+    multiseed.to_csv(GRIN_MULTISEED_CSV, index=False)
+    pd.concat([pd.read_csv(GRIN_RUNS_DIR / f"{g}_seed{s}_pv.csv")
+               for g in graphs for s in seeds], ignore_index=True).to_csv(GRIN_MULTISEED_PV_CSV, index=False)
+    _build_ablation(multiseed).to_csv(GRAPH_ABLATION_CSV, index=False)
+    print(f"Wrote {GRIN_MULTISEED_CSV} ({len(multiseed)} rows), "
+          f"{GRAPH_ABLATION_CSV}, {GRIN_MULTISEED_PV_CSV}")
+    return multiseed
+
+
+# ---------------------------------------------------------------------------
 # smoke test
 # ---------------------------------------------------------------------------
 def _benchmark_one_epoch(config, train, val, dev_name: str) -> str:
@@ -376,7 +514,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="GRIN imputer.")
     parser.add_argument("--full", action="store_true",
                         help="Run the full evaluation (fit once, score all masks, save CSV).")
+    parser.add_argument("--multiseed-ablation", action="store_true",
+                        help="Run 3 seeds x 2 graphs (basin-aware + plain), aggregate, ablate.")
+    parser.add_argument("--consolidate", action="store_true",
+                        help="Re-aggregate saved per-run files into the headline + ablation (no retraining).")
     args = parser.parse_args()
+    if args.consolidate:
+        _consolidate_runs()
+        return 0
+    if args.multiseed_ablation:
+        return run_multiseed_ablation()
     return run_full_evaluation() if args.full else run_smoke()
 
 
