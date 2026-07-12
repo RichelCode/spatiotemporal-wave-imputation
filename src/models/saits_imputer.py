@@ -23,11 +23,13 @@ Importable; nothing runs on import.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import time
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from pygrinder import mcar
 from pypots.imputation import SAITS
@@ -36,7 +38,7 @@ from pypots.optim import Adam
 from ..data.download import load_config
 from ..evaluation.masking import load_masks, make_model_input, score
 from ..features.preprocess import inverse_transform, load_meta
-from .baselines import load_truth
+from .baselines import _config_key, load_truth
 from .deep_common import (
     DeepImputer, build_training_windows, evaluate_deep_model, reassemble,
     select_device, window_series,
@@ -45,7 +47,9 @@ from .deep_common import (
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+AXES_JSON = PROJECT_ROOT / "data" / "processed" / "wave_tensor_axes.json"
 SAITS_RESULTS_CSV = PROJECT_ROOT / "reports" / "saits_imputation_results.csv"
+SAITS_PER_VICTIM_CSV = PROJECT_ROOT / "reports" / "saits_per_victim_outage.csv"
 
 VAL_HOLDOUT_FRACTION = 0.10  # MCAR fraction masked in val for the early-stopping signal
 
@@ -160,6 +164,55 @@ def run_full_evaluation() -> int:
 
 
 # ---------------------------------------------------------------------------
+# per-victim errors on station-outage masks (for connectivity analysis)
+# ---------------------------------------------------------------------------
+def run_outage_per_victim() -> int:
+    """Retrain SAITS (seeded) and save per-victim errors for the outage masks.
+
+    Cheap: fits once, imputes ONLY the 6 station-outage masks, and writes
+    reports/saits_per_victim_outage.csv so the GRIN-vs-SAITS per-victim
+    comparison is never lost.
+    """
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    config = load_config()
+    meta = load_meta()
+    truth = load_truth()
+    observed = ~np.isnan(truth)
+    W = int(config["deep"]["window_hours"])
+    device = select_device(config["deep"])
+    seed = int(config["deep"].get("seed", config["project"]["seed"]))
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if device.type == "mps" and hasattr(torch, "mps"):
+        torch.mps.manual_seed(seed)
+    print(f"SAITS per-victim: device={device} seed={seed} max_epochs={config['deep']['max_epochs']}")
+
+    train, val = build_training_windows(truth, observed, meta, W)
+    model = SAITSImputer(config, device=device)
+    t0 = time.time()
+    model.fit(train, val)
+    print(f"fit time: {(time.time() - t0) / 60:.1f} min")
+
+    station_ids = list(json.load(open(AXES_JSON))["station_ids"])
+    masks = [m for m in load_masks() if m.mechanism == "station_outage"]
+    records = []
+    for mask in masks:
+        res = score(model.impute(make_model_input(truth, mask)), mask, meta, truth)
+        cfg = _config_key(mask)
+        for s_idx, entry in res["per_victim"].items():
+            for tgt, mets in entry.items():
+                for metric in ("MAE", "RMSE"):
+                    records.append({
+                        "station_id": station_ids[s_idx], "station_idx": int(s_idx),
+                        "config": cfg, "seed": mask.seed, "target": tgt,
+                        "metric": metric, "value": mets[metric], "n_cells": mets["n"],
+                    })
+    pd.DataFrame(records).to_csv(SAITS_PER_VICTIM_CSV, index=False)
+    print(f"Wrote {SAITS_PER_VICTIM_CSV} ({len(records)} rows)")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # smoke test
 # ---------------------------------------------------------------------------
 def run_smoke() -> int:
@@ -212,7 +265,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="SAITS imputer.")
     parser.add_argument("--full", action="store_true",
                         help="Run the full evaluation (fit once, score all masks, save CSV).")
+    parser.add_argument("--outage-per-victim", action="store_true",
+                        help="Fit once and save per-victim errors for the station-outage masks.")
     args = parser.parse_args()
+    if args.outage_per_victim:
+        return run_outage_per_victim()
     return run_full_evaluation() if args.full else run_smoke()
 
 
