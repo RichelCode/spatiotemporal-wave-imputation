@@ -175,9 +175,10 @@ stations we selected @n_stations@ that meet a coverage-and-longevity threshold
 over 2021--2025, yielding an hourly tensor of @n_hours@ time steps across the
 station panel used throughout (Figure~\ref{fig:map}). The connectivity analysis
 in Section~\ref{sec:results}
-is limited to the subset of stations that both host a station-outage victim and
-have valid neighbours, so its sample size ($n\approx@nw@$) is smaller than the
-full panel.
+is limited to the station-outage victim stations, of which there are @nw@ with a
+scorable WVHT recovery and @na@ with a scorable APD recovery (five victims do not
+report APD and so cannot be scored on it). These per-target sample sizes are much
+smaller than the full panel.
 
 We correct two classes of metadata error discovered during the audit. First, a
 basin misassignment near the Florida--Atlantic boundary was fixed by adjusting
@@ -223,8 +224,10 @@ used to set the selection threshold.}
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.86\textwidth]{fig4_target_dists.png}
-\caption{Distributions of the target variables, significant wave height (WVHT)
-and average wave period (APD).}
+\caption{Pooled distributions (all stations $\times$ hours) of the two modelled
+targets---significant wave height (WVHT) and average wave period (APD)---and the
+retained predictor feature, dominant wave period (DPD). DPD is a model input, not
+a target. Solid and dashed lines mark the mean and median.}
 \label{fig:tdist}
 \end{figure}
 
@@ -415,17 +418,17 @@ form, after normalizing by each station's own variability, and as the GRIN-minus
 SAITS advantage. The signs are consistent with the hypothesis---higher degree
 and denser edge weight tend to lower normalized error---and several coefficients
 reach significance ($^{*}p<0.05$). We deliberately do not overclaim: the sample
-is small ($n\approx@nw@$ stations), so we read this as \emph{suggestive},
-directional evidence rather than a firm law. Figure~\ref{fig:conn} visualizes the
-relationship.
+is small ($n=@nw@$ victim stations for WVHT and $n=@na@$ for APD), so we read this
+as \emph{suggestive}, directional evidence rather than a firm law.
+Figure~\ref{fig:conn} visualizes the relationship.
 
 \begin{table}[t]
 \centering
 \caption{Spearman correlation between station connectivity and station-outage
 recovery. Negative values mean better-connected stations are recovered more
 accurately. ``Normalized'' divides error by the station's own variability;
-``advantage'' is GRIN minus SAITS. $^{*}p<0.05$. Sample is small
-($n\approx@nw@$), so these are suggestive.}
+``advantage'' is GRIN minus SAITS. $^{*}p<0.05$. Samples are small
+($n=@nw@$ stations for WVHT, $n=@na@$ for APD), so these are suggestive.}
 \label{tab:conn}
 \small
 \begin{tabular}{l l ccc}
@@ -572,7 +575,8 @@ We are careful about what we do not show. The basin-aware graph performs within
 model-seed noise of the plain graph; rather than bury this, we present it as a
 simplification---basin bookkeeping is unnecessary here. The connectivity effect
 has the expected sign and some significant coefficients, but with only
-$n\approx@nw@$ stations it is underpowered, and we label it suggestive.
+$n=@nw@$ victim stations for WVHT (and $n=@na@$ for APD) it is underpowered, and
+we label it suggestive.
 
 \noindent\textbf{Limitations.} Our evaluation is confined to two targets (WVHT
 and APD) over one national archive and one multi-year window; other basins,

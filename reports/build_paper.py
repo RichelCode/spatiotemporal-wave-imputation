@@ -109,7 +109,8 @@ for t in TGTS:
         adv_r, adv_p = rho(mk, f"{t}_adv")
         rows.append(f"{t} & {mn} & {raw_r:+.2f}{star(raw_p)} & {nrm_r:+.2f}{star(nrm_p)} & {adv_r:+.2f}{star(adv_p)} \\\\")
 T3 = "\n".join(rows)
-n_w = int(conn["WVHT_norm"].notna().sum())
+n_w = int(conn["WVHT_MAE"].notna().sum())
+n_a = int(conn["APD_MAE"].notna().sum())
 adv_w = conn["WVHT_adv"].mean()
 adv_a = conn["APD_adv"].mean()
 
@@ -166,7 +167,7 @@ P = {
     "n_stations": "140", "n_audit": "872", "n_hours": "43{,}824",
     "adv_w": f"{adv_w:.2f}", "adv_a": f"{adv_a:.2f}",
     "abl_within": str(ablation_within), "abl_total": str(ablation_total),
-    "nw": str(n_w),
+    "nw": str(n_w), "na": str(n_a),
     "pers1_wvht": f"{fmae('persistence', 'WVHT', 1)[0]:.3f}",
     "gwn12_w": f"{fmae('graphwavenet', 'WVHT', 12)[1]:+.3f}", "gwn24_w": f"{fmae('graphwavenet', 'WVHT', 24)[1]:+.3f}",
     "gwn12_a": f"{fmae('graphwavenet', 'APD', 12)[1]:+.3f}", "gwn24_a": f"{fmae('graphwavenet', 'APD', 24)[1]:+.3f}",

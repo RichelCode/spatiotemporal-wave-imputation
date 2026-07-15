@@ -9,8 +9,9 @@ is built on to the console.
 Style is consistent and paper-oriented: readable fonts, axes labelled with
 units, an Okabe-Ito colourblind-safe palette, and minimal chartjunk.
 
-The three modelled wave targets are WVHT (m), DPD (s), APD (s); there are no
-wind features in this tensor (see build_tensor.py for the rationale).
+The modelled targets are WVHT (m) and APD (s); DPD (s) is retained as a predictor
+feature, not a target. There are no wind features in this tensor (see
+build_tensor.py for the rationale).
 
 Run:  ``python -m src.features.eda``   (builds all figures)
 Importable; nothing runs on import.
@@ -242,15 +243,19 @@ def fig3_coverage_dist(mask, features, saved):
 # Figure 4 — pooled target distributions
 # ---------------------------------------------------------------------------
 def fig4_target_dists(tensor, mask, features, saved):
-    print("\n[fig4] pooled target distributions")
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
-    for ax, name in zip(axes, ("WVHT", "DPD", "APD")):
+    print("\n[fig4] pooled target / feature distributions")
+    # WVHT and APD are the modelled targets; DPD is a retained predictor feature.
+    # Order targets first, feature last, and label each panel by its role so the
+    # figure never implies DPD is a target.
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.4), constrained_layout=True)
+    for ax, name in zip(axes, ("WVHT", "APD", "DPD")):
         f = features.index(name)
         vals = tensor[:, :, f][mask[:, :, f]]
         ax.hist(vals, bins=80, color=TARGET_COLORS[name], alpha=0.85)
         ax.set_xlabel(f"{name} ({TARGET_UNITS[name]})")
         ax.set_ylabel("count")
-        ax.set_title(name)
+        role = "target" if name in ("WVHT", "APD") else "feature"
+        ax.set_title(f"{name} ({role})")
         m, med = float(np.mean(vals)), float(np.median(vals))
         sd, sk = float(np.std(vals)), float(stats.skew(vals))
         ax.axvline(m, color="black", linestyle="-", linewidth=1)
@@ -259,7 +264,8 @@ def fig4_target_dists(tensor, mask, features, saved):
         if name == "WVHT":
             tag = "right-skewed (expected)" if sk > 0 else "NOT right-skewed (unexpected!)"
             print(f"         -> WVHT skew {sk:+.3f}: {tag}")
-    fig.suptitle("Figure 4. Pooled target distributions (all stations × hours)", fontweight="bold")
+    fig.suptitle("Figure 4. Distributions of the targets (WVHT, APD) and retained feature (DPD)",
+                 fontweight="bold")
     save_fig(fig, "fig4_target_dists", saved)
 
 
@@ -314,7 +320,9 @@ def fig6_target_relationships(tensor, mask, features, saved):
     print("\n[fig6] inter-target relationships")
     pairs = [("WVHT", "DPD"), ("WVHT", "APD"), ("DPD", "APD")]
     rng = np.random.default_rng(0)
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.4))
+    # constrained_layout keeps the two-line subplot titles from colliding with
+    # the suptitle (the middle panel was previously overlapping it).
+    fig, axes = plt.subplots(1, 3, figsize=(13.5, 5.0), constrained_layout=True)
     for ax, (a, b) in zip(axes, pairs):
         fa, fb = features.index(a), features.index(b)
         both = mask[:, :, fa] & mask[:, :, fb]
