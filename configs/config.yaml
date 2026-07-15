@@ -27,6 +27,18 @@ graph:
   sigma_heuristic: "local_self_tuning"  # σ_i = distance to i's k-th NN; weight = exp(-d^2 / (σ_i·σ_j))
   basin_aware: true                    # also build a variant that zeros cross-basin edges
 
+energy:
+  # Deep-water wave energy flux P = rho*g^2/(64*pi) * Hm0^2 * Te  ->  P ~= 0.49 * H^2 * Te (kW/m),
+  # H in metres, Te in seconds (rho=1025 kg/m^3).
+  power_coeff_kw: 0.49
+  # NDBC reports APD (a mean period), not the energy period Te. Convert Te = alpha * APD.
+  # alpha ~ 1.1-1.2 is the standard wave-energy-resource convention; Te ~= 1.12*APD for a
+  # JONSWAP spectrum (Cahill & Lewis 2014, "Wave Period Ratios and the Calculation of Wave
+  # Power", METS2014, vtechworks.lib.vt.edu/handle/10919/49206). Some spectra reach ~1.35.
+  # Comparative results (method rankings, persistence-skill) are INVARIANT to alpha, which scales
+  # every method's energy identically; only the absolute kW/m magnitudes depend on it.
+  te_apd_alpha: 1.12
+
 deep:
   window_hours: 48        # temporal window length W (non-overlapping windows)
   batch_size: 256
