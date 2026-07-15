@@ -320,9 +320,7 @@ def fig6_target_relationships(tensor, mask, features, saved):
     print("\n[fig6] inter-target relationships")
     pairs = [("WVHT", "DPD"), ("WVHT", "APD"), ("DPD", "APD")]
     rng = np.random.default_rng(0)
-    # constrained_layout keeps the two-line subplot titles from colliding with
-    # the suptitle (the middle panel was previously overlapping it).
-    fig, axes = plt.subplots(1, 3, figsize=(13.5, 5.0), constrained_layout=True)
+    fig, axes = plt.subplots(1, 3, figsize=(14, 5.0))
     for ax, (a, b) in zip(axes, pairs):
         fa, fb = features.index(a), features.index(b)
         both = mask[:, :, fa] & mask[:, :, fb]
@@ -344,11 +342,18 @@ def fig6_target_relationships(tensor, mask, features, saved):
         hb = ax.hexbin(xp, yp, gridsize=45, cmap="viridis", mincnt=1, bins="log")
         ax.set_xlabel(f"{a} ({TARGET_UNITS[a]})")
         ax.set_ylabel(f"{b} ({TARGET_UNITS[b]})")
-        ax.set_title(f"{a} vs {b}\nPearson={pear:.2f}, Spearman={spear:.2f}")
+        # Single-line panel title; put the correlations in an in-axes box so a
+        # two-line title can never collide with the suptitle.
+        ax.set_title(f"{a} vs {b}", pad=8)
+        ax.text(0.04, 0.96, f"Pearson = {pear:.2f}\nSpearman = {spear:.2f}",
+                transform=ax.transAxes, va="top", ha="left", fontsize=9,
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.75, edgecolor="none"))
         ax.grid(False)
         fig.colorbar(hb, ax=ax, label="log count")
         print(f"  {a:4s}-{b:4s}: Pearson={pear:+.3f}  Spearman={spear:+.3f}  (n={x.size:,})")
     fig.suptitle("Figure 6. Inter-target joint distributions", fontweight="bold")
+    # Reserve the top band for the suptitle so nothing overlaps it.
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     save_fig(fig, "fig6_target_relationships", saved)
 
 
