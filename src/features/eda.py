@@ -351,9 +351,10 @@ def fig6_target_relationships(tensor, mask, features, saved):
         ax.grid(False)
         fig.colorbar(hb, ax=ax, label="log count")
         print(f"  {a:4s}-{b:4s}: Pearson={pear:+.3f}  Spearman={spear:+.3f}  (n={x.size:,})")
-    fig.suptitle("Figure 6. Inter-target joint distributions", fontweight="bold")
-    # Reserve the top band for the suptitle so nothing overlaps it.
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    # No suptitle: the LaTeX \caption already labels this "Figure 6", so a figure
+    # title here is redundant and was colliding with the per-axes panel titles.
+    # Keeping only the three single-line panel titles cannot overlap anything.
+    fig.tight_layout()
     save_fig(fig, "fig6_target_relationships", saved)
 
 
