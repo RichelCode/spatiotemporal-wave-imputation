@@ -330,8 +330,11 @@ P \;=\; \frac{\rho g^{2}}{64\pi}\, H_{m0}^{2}\, T_e \;\approx\; 0.49\, H^{2}\, T
 \end{equation}
 with $H$ in metres and $T_e$ in seconds. Because NDBC reports APD rather than the
 energy period $T_e$, we set $T_e = \alpha \cdot \text{APD}$ with $\alpha = 1.12$,
-the JONSWAP-spectrum ratio analysed by \citet{cahill2014}; $\alpha$ is an
-explicit configuration parameter. True energy uses observed WVHT and APD at
+a wave-period ratio consistent with the empirical $T_e/T_{02}$ values reported by
+\citet{cahill2014};\footnote{This treats NDBC's average wave period (APD) as
+equivalent to the average zero-crossing period $T_{02}$ used in that ratio---an
+assumption to confirm with co-authors, not an established identity.} $\alpha$ is
+an explicit configuration parameter. True energy uses observed WVHT and APD at
 $t+h$, and a station-hour is scored only where \emph{both} targets are genuinely
 observed. Since $\alpha$ multiplies every method's energy identically, method
 rankings and persistence-normalized skill are invariant to $\alpha$; only the
