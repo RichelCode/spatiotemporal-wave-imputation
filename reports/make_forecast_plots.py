@@ -40,8 +40,13 @@ HORIZONS = [1, 3, 6, 12, 24]
 
 
 def _load_forecast() -> pd.DataFrame:
-    frames = [pd.read_csv(f) for f in sorted(R.glob("forecast_*_results.csv"))]
-    frames.append(pd.read_csv(R / "forecast_horizon_sweep.csv"))
+    frames = [pd.read_csv(R / "forecast_horizon_sweep.csv")]
+    for f in sorted(R.glob("forecast_*_results.csv")):
+        if "baseline" in f.name:              # horizon-less h=1 baseline; skip
+            continue
+        d = pd.read_csv(f)
+        if "horizon" in d.columns:
+            frames.append(d)
     df = pd.concat(frames, ignore_index=True)
     return df.drop_duplicates(["method", "target", "horizon"])
 
