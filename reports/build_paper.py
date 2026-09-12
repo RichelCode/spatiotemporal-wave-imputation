@@ -115,7 +115,17 @@ adv_w = conn["WVHT_adv"].mean()
 adv_a = conn["APD_adv"].mean()
 
 # ---- forecasting numbers ----
-fc = pd.concat([sweep, fdeep], ignore_index=True)
+# concat the horizon sweep (persistence/AR) with every deep-forecaster result CSV
+# (forecast_deep_results.csv + forecast_<model>_results.csv), skipping the
+# horizon-less baseline file. New models appear automatically once their CSV exists.
+_fc_frames = [sweep]
+for _f in sorted(R.glob("forecast_*_results.csv")):
+    if "baseline" in _f.name:
+        continue
+    _d = pd.read_csv(_f)
+    if "horizon" in _d.columns:
+        _fc_frames.append(_d)
+fc = pd.concat(_fc_frames, ignore_index=True).drop_duplicates(["method", "target", "horizon"])
 
 
 def fmae(meth, tgt, h):
@@ -123,7 +133,13 @@ def fmae(meth, tgt, h):
     return (float(r["MAE"].iloc[0]), float(r["skill_vs_persistence"].iloc[0])) if len(r) else (np.nan, np.nan)
 
 
-FMETH = [("persistence", "Persistence"), ("ar24", "AR(24)"), ("graphwavenet", "GraphWaveNet")]
+# Canonical display order; only methods actually present in the CSVs are shown.
+FORECAST_ORDER = [("persistence", "Persistence"), ("ar24", "AR(24)"),
+                  ("dlinear", "DLinear"), ("patchtst", "PatchTST"),
+                  ("itransformer", "iTransformer"), ("graphwavenet", "GraphWaveNet"),
+                  ("dcrnn", "DCRNN"), ("agcrn", "AGCRN")]
+_fc_methods = set(fc["method"].unique())
+FMETH = [(k, n) for k, n in FORECAST_ORDER if k in _fc_methods]
 
 # ---- Table 4: forecasting (MAE, skill) across horizons 1/3/6/12/24 ----
 FHORIZONS = [1, 3, 6, 12, 24]
@@ -144,8 +160,9 @@ def emae(meth, h):
     return float(r["MAE_kw"]), float(r["skill_vs_persistence"])
 
 
+EMETH = [(k, n) for k, n in FORECAST_ORDER if k in set(energy["method"].unique())]
 rows = []
-for meth, mn in FMETH:
+for meth, mn in EMETH:
     cells = []
     for h in FHORIZONS:
         m, sk = emae(meth, h)
