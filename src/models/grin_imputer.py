@@ -324,11 +324,15 @@ def run_full_evaluation() -> int:
 # ---------------------------------------------------------------------------
 # multi-seed + basin-vs-plain ablation
 # ---------------------------------------------------------------------------
-def _impute_and_collect(model, truth, meta, station_ids, tags: dict):
-    """Impute all 24 masks once; return (overall_records, per_victim_records), tagged."""
+def _impute_and_collect(model, truth, meta, station_ids, tags: dict, masks=None):
+    """Impute the given masks once; return (overall_records, per_victim_records), tagged.
+
+    ``masks`` defaults to the full saved suite (:func:`load_masks`).
+    """
     overall, victims = [], []
-    for i, mask in enumerate(load_masks(), start=1):
-        logger.info("    [%d/24] %s", i, mask.id)
+    masks = masks if masks is not None else load_masks()
+    for i, mask in enumerate(masks, start=1):
+        logger.info("    [%d/%d] %s", i, len(masks), mask.id)
         res = score(model.impute(make_model_input(truth, mask)), mask, meta, truth)
         cfg = _config_key(mask)
         for tgt in TARGET_FEATURES:
@@ -421,6 +425,54 @@ def run_multiseed_ablation(seeds=(0, 1, 2),
         if device.type == "mps" and hasattr(torch, "mps"):
             torch.mps.empty_cache()
 
+    _consolidate_runs(seeds, graphs)
+    return 0
+
+
+def reimpute_from_checkpoints(seeds=(0, 1, 2),
+                              graphs=("adjacency_knn_basin", "adjacency_knn"),
+                              new_configs=("mcar_5", "mcar_20", "block_5", "block_20"),
+                              device="cpu") -> int:
+    """Add results for NEW mask configs by reloading the committed per-(graph, seed)
+    GRIN checkpoints -- no retraining -- and merging into the saved per-run CSVs,
+    then re-consolidating the multi-seed headline and ablation.
+
+    Use after regenerating the mask suite with new ratios (e.g. MCAR/block 5% and
+    20%): the trained weights are reused, so existing configs are untouched and the
+    new configs are added at inference cost only. Only the masks whose config is in
+    ``new_configs`` are imputed. ``device`` is 'cpu' (deterministic) or 'mps'/'cuda'
+    (faster inference; results differ only at floating-point tolerance).
+    """
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    config = load_config()
+    meta = load_meta()
+    truth = load_truth()
+    device = torch.device(device)
+    station_ids = list(json.load(open(AXES_JSON))["station_ids"])
+    GRIN_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    new_masks = [m for m in load_masks() if _config_key(m) in set(new_configs)]
+    if not new_masks:
+        raise RuntimeError(f"no masks match new_configs={new_configs}; regenerate the suite first")
+    print(f"reuse: {len(new_masks)} new-config masks x {len(seeds) * len(graphs)} checkpoints "
+          f"(configs={list(new_configs)})", flush=True)
+    run_specs = [(g, s) for g in graphs for s in seeds]
+    for run_num, (graph, seed) in enumerate(run_specs, start=1):
+        tag = f"{graph}_seed{seed}"
+        ckpt = PROCESSED_DIR / f"grin_checkpoint_{tag}.pt"
+        agg_p = GRIN_RUNS_DIR / f"{tag}_agg.csv"
+        if not ckpt.exists() or not agg_p.exists():
+            raise FileNotFoundError(f"need both {ckpt} and {agg_p} to merge")
+        t0 = time.time()
+        model = GRINImputer(config, device=device, adjacency=graph, seed=seed).load_checkpoint(ckpt)
+        overall, _ = _impute_and_collect(
+            model, truth, meta, station_ids, {"graph": graph, "model_seed": seed}, masks=new_masks)
+        old = pd.read_csv(agg_p)
+        old = old[~old["config"].isin(new_configs)]         # idempotent: drop prior new-config rows
+        pd.concat([old, pd.DataFrame(overall)], ignore_index=True).to_csv(agg_p, index=False)
+        print(f"[{run_num}/{len(run_specs)}] merged {tag} "
+              f"({(time.time() - t0) / 60:.1f} min, inference only)", flush=True)
+        del model
+        gc.collect()
     _consolidate_runs(seeds, graphs)
     return 0
 

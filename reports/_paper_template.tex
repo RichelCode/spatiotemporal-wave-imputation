@@ -379,12 +379,12 @@ purely temporal deep models (SAITS @saits_so_wvht@~m, BRITS @brits_so_wvht@~m)
 whose single-station design cannot see a station that is entirely absent. It is
 also best under 50\% contiguous-block missingness for both targets. The picture
 changes only under 50\% \emph{completely random} missingness: isolated single-hour
-gaps are easy to interpolate, so linear interpolation attains the lowest error
-(WVHT @lin_mcar_wvht@~m) and GRIN (@grin_mcar_wvht@~m) is competitive---matching
-or slightly beating the attention model SAITS (@saits_mcar_wvht@~m) on height---
-rather than dominant. The message is not that GRIN dominates everywhere, but that
-it is best exactly where spatial or temporal structure must be exploited, and
-merely competitive where a gap is trivial to fill.
+gaps are easy to interpolate, so the temporal methods lead. Linear interpolation
+(WVHT @lin_mcar_wvht@~m) is best by a hair over the attention model SAITS
+(@saits_mcar_wvht@~m), and GRIN (@grin_mcar_wvht@~m) is competitive but behind---the
+graph adds little when time alone suffices. The message is not that GRIN dominates
+everywhere, but that it is best exactly where spatial or temporal structure must be
+exploited, and merely competitive where a gap is trivial to fill.
 
 \begin{table}[t]
 \centering
@@ -393,6 +393,7 @@ spatial regime; MCAR-50\% and Block-50\% are temporal regimes. GRIN values are
 mean $\pm$ standard deviation over three model seeds. Best per column in bold.}
 \label{tab:imp}
 \small
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{l cc cc cc}
 \toprule
 & \multicolumn{2}{c}{Station-outage} & \multicolumn{2}{c}{MCAR-50\%}
@@ -402,7 +403,59 @@ Method & WVHT & APD & WVHT & APD & WVHT & APD\\
 \midrule
 @T1@
 \bottomrule
-\end{tabular}
+\end{tabular}}
+\end{table}
+
+\paragraph{Robustness across missingness rates.}
+Tables~\ref{tab:sweepW} and~\ref{tab:sweepA} extend the comparison to five
+missingness rates (5--50\%) for both the random (MCAR) and contiguous-block
+regimes, so the ranking is not read off a single rate. The pattern is stable
+across the whole range. Under MCAR, where a hidden hour usually sits between two
+observed neighbours in time, the temporal methods win at every rate: the attention
+model SAITS is best at almost every rate (linear interpolation edges it only at the
+highest WVHT rate). GRIN trails the temporal leaders here, and the spatial-only
+interpolators trail furthest---time, not space, is the easy axis. Under contiguous
+blocks the ranking reverses cleanly: GRIN is best at every block rate for \emph{both}
+targets, because a longer temporal gap is exactly where a station must borrow from
+its neighbours. The single-paradigm floor and the graph's advantage are therefore
+properties of the regime, not artefacts of one masking rate.
+
+\begin{table}[t]
+\centering
+\caption{Imputation MAE for \textbf{WVHT} (m) across missingness rates, MCAR and
+Block at 5/10/20/30/50\%. GRIN is the basin-aware graph (mean over three model
+seeds). Lower is better; best per column in bold.}
+\label{tab:sweepW}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l ccccc ccccc}
+\toprule
+& \multicolumn{5}{c}{MCAR} & \multicolumn{5}{c}{Block}\\
+\cmidrule(lr){2-6}\cmidrule(lr){7-11}
+Method & 5\% & 10\% & 20\% & 30\% & 50\% & 5\% & 10\% & 20\% & 30\% & 50\%\\
+\midrule
+@T_SWEEP_W@
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Imputation MAE for \textbf{APD} (s) across missingness rates, MCAR and
+Block at 5/10/20/30/50\%. GRIN is the basin-aware graph (mean over three model
+seeds). Lower is better; best per column in bold.}
+\label{tab:sweepA}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l ccccc ccccc}
+\toprule
+& \multicolumn{5}{c}{MCAR} & \multicolumn{5}{c}{Block}\\
+\cmidrule(lr){2-6}\cmidrule(lr){7-11}
+Method & 5\% & 10\% & 20\% & 30\% & 50\% & 5\% & 10\% & 20\% & 30\% & 50\%\\
+\midrule
+@T_SWEEP_A@
+\bottomrule
+\end{tabular}}
 \end{table}
 
 \paragraph{Isolating the graph's contribution.}
