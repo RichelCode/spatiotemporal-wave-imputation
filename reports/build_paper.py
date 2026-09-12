@@ -125,19 +125,20 @@ def fmae(meth, tgt, h):
 
 FMETH = [("persistence", "Persistence"), ("ar24", "AR(24)"), ("graphwavenet", "GraphWaveNet")]
 
-# ---- Table 4: forecasting (MAE, skill) at h=12,24 ----
+# ---- Table 4: forecasting (MAE, skill) across horizons 1/3/6/12/24 ----
+FHORIZONS = [1, 3, 6, 12, 24]
 rows = []
 for meth, mn in FMETH:
     cells = []
     for t in TGTS:
-        for h in (12, 24):
+        for h in FHORIZONS:
             m, sk = fmae(meth, t, h)
             cells.append(f"{m:.3f}" if meth == "persistence" else f"{m:.3f} ({sk:+.3f})")
     rows.append(f"{mn} & " + " & ".join(cells) + r" \\")
 T4 = "\n".join(rows)
 
 
-# ---- Table 5: energy ----
+# ---- Table 5: energy across horizons 1/3/6/12/24 ----
 def emae(meth, h):
     r = energy[(energy.method == meth) & (energy.horizon == h)].iloc[0]
     return float(r["MAE_kw"]), float(r["skill_vs_persistence"])
@@ -146,7 +147,7 @@ def emae(meth, h):
 rows = []
 for meth, mn in FMETH:
     cells = []
-    for h in (12, 24):
+    for h in FHORIZONS:
         m, sk = emae(meth, h)
         cells.append(f"{m:.3f}" if meth == "persistence" else f"{m:.3f} ({sk:+.3f})")
     rows.append(f"{mn} & " + " & ".join(cells) + r" \\")
@@ -192,8 +193,10 @@ P = {
     "abl_within": str(ablation_within), "abl_total": str(ablation_total),
     "nw": str(n_w), "na": str(n_a),
     "pers1_wvht": f"{fmae('persistence', 'WVHT', 1)[0]:.3f}",
+    "gwn1_w": f"{fmae('graphwavenet', 'WVHT', 1)[1]:+.3f}", "gwn6_w": f"{fmae('graphwavenet', 'WVHT', 6)[1]:+.3f}",
     "gwn12_w": f"{fmae('graphwavenet', 'WVHT', 12)[1]:+.3f}", "gwn24_w": f"{fmae('graphwavenet', 'WVHT', 24)[1]:+.3f}",
     "gwn12_a": f"{fmae('graphwavenet', 'APD', 12)[1]:+.3f}", "gwn24_a": f"{fmae('graphwavenet', 'APD', 24)[1]:+.3f}",
+    "gwn1_a": f"{fmae('graphwavenet', 'APD', 1)[1]:+.3f}",
     "ar12_w": f"{fmae('ar24', 'WVHT', 12)[1]:+.3f}", "ar24_w": f"{fmae('ar24', 'WVHT', 24)[1]:+.3f}",
     "en_gwn12": f"{emae('graphwavenet', 12)[1]:+.3f}", "en_gwn24": f"{emae('graphwavenet', 24)[1]:+.3f}",
     "en_ar12": f"{emae('ar24', 12)[1]:+.3f}", "en_ar24": f"{emae('ar24', 24)[1]:+.3f}",

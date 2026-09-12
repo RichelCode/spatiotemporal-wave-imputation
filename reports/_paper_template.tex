@@ -1,6 +1,6 @@
 \documentclass[11pt]{article}
 
-% ---- packages ----
+% packages
 \usepackage[margin=1in]{geometry}
 \usepackage{graphicx}
 \usepackage{booktabs}
@@ -32,9 +32,9 @@ Ocean buoy networks report wave measurements with large and structured gaps:
 whole stations drop offline for weeks, and individual readings fail at random.
 These gaps limit both the reconstruction of past sea states and the forecasting
 of future ones, which in turn limits the estimation of wave energy for marine
-renewable-energy siting. We study whether a single modelling idea---a
+renewable-energy siting. We study whether a single modelling idea, a
 spatiotemporal graph neural network that shares information between nearby
-buoys---improves all three tasks on a national archive of U.S. National Data
+buoys, improves all three tasks on a national archive of U.S. National Data
 Buoy Center (NDBC) stations. We assemble an hourly tensor of significant wave
 height (WVHT) and average wave period (APD) over @n_stations@ stations selected
 from a national coverage audit, build a $k$-nearest-neighbour Gaussian graph
@@ -49,7 +49,7 @@ GRIN is competitive rather than dominant. For forecasting, a spatiotemporal grap
 16\% over persistence, roughly double the skill of an autoregressive model.
 Converting forecasts to wave power, the graph model's advantage \emph{grows}:
 because power scales with the square of wave height, its energy-forecast skill
-reaches @en_gwn24@ versus persistence---wider than its height skill. Across all
+reaches @en_gwn24@ versus persistence, wider than its height skill. Across all
 three tasks the graph helps most where spatial structure is strongest.
 \end{abstract}
 
@@ -79,13 +79,13 @@ along those edges through time. Such models have advanced traffic and sensor
 forecasting \citep{dcrnn,gwn}, and a graph imputation model has been proposed
 for generic sensor networks \citep{grin}. What is not established is whether one
 consistent graph formulation helps across the full applied pipeline for ocean
-waves---reconstruction, prediction, \emph{and} the energy estimate that a
-practitioner ultimately cares about---and, crucially, \emph{where} it helps and
+waves (reconstruction, prediction, \emph{and} the energy estimate that a
+practitioner ultimately cares about), and, crucially, \emph{where} it helps and
 where it does not.
 
 We test this end to end on a national NDBC archive. Our central finding is
 simple: the graph helps most precisely where spatial structure matters most, and
-the benefit is largest for the quantity that is hardest to get right---wave
+the benefit is largest for the quantity that is hardest to get right, wave
 power. We also report, honestly, where the graph does \emph{not} help: a
 basin-aware refinement of the graph performs within noise of a plain
 nearest-neighbour graph, and a station-level connectivity effect is directionally
@@ -107,8 +107,8 @@ robust but statistically underpowered.
   \item We carry the forecasts through to wave power and show that the
   $H^{2}$ nonlinearity \emph{amplifies} the graph model's advantage, with
   method rankings invariant to the period-conversion coefficient.
-  \item We report two negative or underpowered results---a within-noise
-  basin-aware graph and a suggestive-only connectivity effect---so the benchmark
+  \item We report two negative or underpowered results (a within-noise
+  basin-aware graph and a suggestive-only connectivity effect), so the benchmark
   is not oversold.
 \end{itemize}
 
@@ -116,7 +116,7 @@ robust but statistically underpowered.
 \label{sec:related}
 
 \subsection{Time-series imputation}
-The simplest fixes---mean fill, forward fill, and linear interpolation---treat
+The simplest fixes, mean fill, forward fill, and linear interpolation, treat
 each series independently and ignore both cross-station structure and
 uncertainty. Classical spatial interpolation (inverse-distance weighting,
 kriging) uses neighbours but not temporal dynamics
@@ -147,7 +147,7 @@ Operational wave prediction is dominated by physics-based spectral models that
 solve the wave-action balance over a grid \citep{wavewatch3,booij1999}.
 These are accurate but computationally heavy and require boundary and wind
 forcing. Data-driven forecasting offers a lightweight complement, and for
-short horizons the hardest baseline to beat is persistence---tomorrow looks like
+short horizons the hardest baseline to beat is persistence, tomorrow looks like
 today. We therefore benchmark against persistence and a linear autoregressive
 model and ask whether a graph model adds skill on top.
 
@@ -160,7 +160,7 @@ period rather than the energy period, a documented conversion is needed;
 power. Resource assessments build on such conversions:
 \citet{guillou2020}, using NOAA/NDBC deep-water buoys, finds that an energy-period
 formulation accurately approximates deep-water wave power, whereas using the peak
-period with a default coefficient overestimates it---directly motivating our
+period with a default coefficient overestimates it, directly motivating our
 choice to derive $T_e$ from the reported average period rather than a peak period.
 The applied value of better height and period forecasts is therefore best judged
 in energy units, which is where we end our study.
@@ -225,7 +225,7 @@ used to set the selection threshold.}
 \centering
 \includegraphics[width=0.86\textwidth]{fig4_target_dists.png}
 \caption{Pooled distributions (all stations $\times$ hours) of the two modelled
-targets---significant wave height (WVHT) and average wave period (APD)---and the
+targets, significant wave height (WVHT) and average wave period (APD), and the
 retained predictor feature, dominant wave period (DPD). DPD is a model input, not
 a target. Solid and dashed lines mark the mean and median.}
 \label{fig:tdist}
@@ -297,8 +297,8 @@ blocks, at 10\%, 30\%, and 50\% rates. Scoring is confined to truly held-out
 cells, and no target leaks through the covariates.
 
 \subsection{Imputation models}
-We compare (i) simple baselines---mean fill, forward fill, and linear
-interpolation; (ii) spatial baselines---inverse-distance weighting (IDW) and a
+We compare (i) simple baselines, mean fill, forward fill, and linear
+interpolation; (ii) spatial baselines, inverse-distance weighting (IDW) and a
 combined spatial-plus-temporal interpolator; (iii) SAITS, a self-attention
 imputer \citep{saits}; (iv) BRITS, a bidirectional recurrent imputer
 \citep{brits}; and (v) GRIN, a graph recurrent imputer \citep{grin}. GRIN is
@@ -313,7 +313,7 @@ per-station autoregressive model, AR(24), fit by least squares as a direct
 $h$-step predictor. Our graph model is Graph WaveNet \citep{gwn}.
 
 To avoid leakage we separate training and test information sources. The model is
-\emph{trained} on a graph-completed tensor---missing training entries filled by
+\emph{trained} on a graph-completed tensor, missing training entries filled by
 GRIN, where bidirectional filling is acceptable because it is confined to the
 training period. At \emph{test} time the model reads only causal,
 forward-filled inputs that use past information alone, and we evaluate only at
@@ -332,7 +332,7 @@ with $H$ in metres and $T_e$ in seconds. Because NDBC reports APD rather than th
 energy period $T_e$, we set $T_e = \alpha \cdot \text{APD}$ with $\alpha = 1.12$,
 a wave-period ratio consistent with the empirical $T_e/T_{02}$ values reported by
 \citet{cahill2014};\footnote{This treats NDBC's average wave period (APD) as
-equivalent to the average zero-crossing period $T_{02}$ used in that ratio---an
+equivalent to the average zero-crossing period $T_{02}$ used in that ratio, an
 assumption to confirm with co-authors, not an established identity.} $\alpha$ is
 an explicit configuration parameter. True energy uses observed WVHT and APD at
 $t+h$, and a station-hour is scored only where \emph{both} targets are genuinely
@@ -381,7 +381,7 @@ also best under 50\% contiguous-block missingness for both targets. The picture
 changes only under 50\% \emph{completely random} missingness: isolated single-hour
 gaps are easy to interpolate, so the temporal methods lead. Linear interpolation
 (WVHT @lin_mcar_wvht@~m) is best by a hair over the attention model SAITS
-(@saits_mcar_wvht@~m), and GRIN (@grin_mcar_wvht@~m) is competitive but behind---the
+(@saits_mcar_wvht@~m), and GRIN (@grin_mcar_wvht@~m) is competitive but behind, the
 graph adds little when time alone suffices. The message is not that GRIN dominates
 everywhere, but that it is best exactly where spatial or temporal structure must be
 exploited, and merely competitive where a gap is trivial to fill.
@@ -414,7 +414,7 @@ across the whole range. Under MCAR, where a hidden hour usually sits between two
 observed neighbours in time, the temporal methods win at every rate: the attention
 model SAITS is best at almost every rate (linear interpolation edges it only at the
 highest WVHT rate). GRIN trails the temporal leaders here, and the spatial-only
-interpolators trail furthest---time, not space, is the easy axis. Under contiguous
+interpolators trail furthest. Time, not space, is the easy axis. Under contiguous
 blocks the ranking reverses cleanly: GRIN is best at every block rate for \emph{both}
 targets, because a longer temporal gap is exactly where a station must borrow from
 its neighbours. The single-paradigm floor and the graph's advantage are therefore
@@ -471,8 +471,8 @@ If the graph is the reason GRIN recovers outages, better-connected stations
 should be easier to recover. Table~\ref{tab:conn} tests this with Spearman
 correlations between three connectivity measures and recovery error, in raw
 form, after normalizing by each station's own variability, and as the GRIN-minus-
-SAITS advantage. The signs are consistent with the hypothesis---higher degree
-and denser edge weight tend to lower normalized error---and several coefficients
+SAITS advantage. The signs are consistent with the hypothesis, higher degree
+and denser edge weight tend to lower normalized error, and several coefficients
 reach significance ($^{*}p<0.05$). We deliberately do not overclaim: the sample
 is small ($n=@nw@$ victim stations for WVHT and $n=@na@$ for APD), so we read this
 as \emph{suggestive}, directional evidence rather than a firm law.
@@ -530,33 +530,36 @@ Regime & Target & Basin-aware & Plain $k$-NN & Advantage & Seed SD & Exceeds noi
 \end{table}
 
 \subsection{Forecasting}
-Table~\ref{tab:fc} reports forecast MAE and persistence-normalized skill at
-12 and 24~hours. Two findings stand out. First, persistence is extremely strong
-at very short range---at 1~hour its WVHT error is only @pers1_wvht@~m and it is
-essentially unbeatable---so we report honestly that the value of a learned model
-appears only as the horizon lengthens. Second, at 12--24~hours Graph WaveNet
-adds real skill: about @gwn12_w@ (WVHT, $h{=}12$) rising to @gwn24_w@ at
-$h{=}24$, and comparable skill on APD (@gwn12_a@ to @gwn24_a@). This is roughly
-double the autoregressive model, whose WVHT skill is @ar12_w@ at $h{=}12$ and
-@ar24_w@ at $h{=}24$. Figure~\ref{fig:horizon} shows how persistence degrades and
-how the learned models open a gap as the horizon grows.
+Table~\ref{tab:fc} reports forecast MAE and persistence-normalized skill across
+five horizons, from 1 to 24 hours. Two findings stand out. First, persistence is
+extremely strong at very short range: at 1~hour its WVHT error is only
+@pers1_wvht@~m, and the best learned model improves on it by only @gwn1_w@, so we
+report honestly that a learned model adds little at 1~hour. Second, that value
+grows monotonically with horizon. Graph WaveNet's WVHT skill climbs from @gwn1_w@
+at 1~hour to @gwn6_w@ at 6~hours and @gwn24_w@ at 24~hours, with a similar climb on
+APD (@gwn1_a@ to @gwn24_a@). At 12--24~hours this is roughly double the
+autoregressive model, whose WVHT skill is @ar12_w@ at $h{=}12$ and @ar24_w@ at
+$h{=}24$. Figure~\ref{fig:horizon} shows how persistence degrades and how the
+learned models open a widening gap as the horizon grows.
 
 \begin{table}[t]
 \centering
-\caption{Forecast MAE and persistence-normalized skill (in parentheses) at 12
-and 24 hours. Persistence is the reference, so its skill is zero by definition.
-Higher skill is better.}
+\caption{Forecast MAE and persistence-normalized skill (in parentheses) at
+horizons of 1 to 24 hours. Persistence is the reference, so its skill is zero by
+definition. Higher skill is better.}
 \label{tab:fc}
 \small
-\begin{tabular}{l cc cc}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l ccccc ccccc}
 \toprule
-& \multicolumn{2}{c}{WVHT (m)} & \multicolumn{2}{c}{APD (s)}\\
-\cmidrule(lr){2-3}\cmidrule(lr){4-5}
-Method & $h{=}12$ & $h{=}24$ & $h{=}12$ & $h{=}24$\\
+& \multicolumn{5}{c}{WVHT (m)} & \multicolumn{5}{c}{APD (s)}\\
+\cmidrule(lr){2-6}\cmidrule(lr){7-11}
+Method & $h{=}1$ & $h{=}3$ & $h{=}6$ & $h{=}12$ & $h{=}24$
+& $h{=}1$ & $h{=}3$ & $h{=}6$ & $h{=}12$ & $h{=}24$\\
 \midrule
 @T4@
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
 
 \begin{figure}[t]
@@ -571,10 +574,11 @@ grows, with the graph model ahead at 12--24~hours.}
 \subsection{Wave energy}
 Table~\ref{tab:energy} carries the forecasts through Equation~\ref{eq:power} to
 wave power, scored on the same leakage-safe origins where both WVHT and APD are
-observed. The graph model's advantage not only persists but \emph{grows}. Its
-energy-forecast skill is @en_gwn12@ at $h{=}12$ and @en_gwn24@ at $h{=}24$---
-larger than its own height and period skill---while the autoregressive model
-reaches @en_ar12@ and @en_ar24@. The reason is the $H^{2}$ nonlinearity in
+observed, at every horizon from 1 to 24 hours. The graph model's advantage not
+only persists but \emph{grows}. Its energy-forecast skill rises with horizon to
+@en_gwn12@ at $h{=}12$ and @en_gwn24@ at $h{=}24$, larger than its own height and
+period skill, while the autoregressive model reaches @en_ar12@ and @en_ar24@ at
+those horizons. The reason is the $H^{2}$ nonlinearity in
 Equation~\ref{eq:power}: a model that forecasts wave height more accurately earns
 a squared benefit in energy, so the graph model's edge on height is magnified in
 power. Because $\alpha$ scales all methods equally, these rankings and skills do
@@ -584,13 +588,13 @@ summarizes the result.
 \begin{table}[t]
 \centering
 \caption{Wave-energy forecast MAE (kW/m) and persistence-normalized skill (in
-parentheses) at 12 and 24 hours, scored where both WVHT and APD are observed.
-Rankings and skills are invariant to the period coefficient $\alpha$.}
+parentheses) at horizons of 1 to 24 hours, scored where both WVHT and APD are
+observed. Rankings and skills are invariant to the period coefficient $\alpha$.}
 \label{tab:energy}
 \small
-\begin{tabular}{l cc}
+\begin{tabular}{l ccccc}
 \toprule
-Method & $h{=}12$ & $h{=}24$\\
+Method & $h{=}1$ & $h{=}3$ & $h{=}6$ & $h{=}12$ & $h{=}24$\\
 \midrule
 @T5@
 \bottomrule
@@ -614,7 +618,7 @@ station is missing, its own history is gone and only neighbours can help; the
 graph model is the only method that is best here, and the per-station GRIN-minus-
 SAITS gap shows the improvement comes specifically from message passing, not from
 deep learning in general. When gaps are isolated and random, the advantage
-disappears---an isolated missing hour is trivial to interpolate---exactly as one
+disappears (an isolated missing hour is trivial to interpolate), exactly as one
 would expect if the graph's value is the recovery of \emph{structured} loss.
 
 In forecasting the same logic explains both the null and the positive result.
@@ -629,7 +633,7 @@ widest margin.
 
 We are careful about what we do not show. The basin-aware graph performs within
 model-seed noise of the plain graph; rather than bury this, we present it as a
-simplification---basin bookkeeping is unnecessary here. The connectivity effect
+simplification, basin bookkeeping is unnecessary here. The connectivity effect
 has the expected sign and some significant coefficients, but with only
 $n=@nw@$ victim stations for WVHT (and $n=@na@$ for APD) it is underpowered, and
 we label it suggestive.
@@ -649,18 +653,18 @@ a hybrid comparison is left to future work.
 
 \section{Conclusion}
 \label{sec:conclusion}
-We asked whether one modelling idea---a spatiotemporal graph that shares
-information between buoys---improves the full applied pipeline for ocean waves.
+We asked whether one modelling idea, a spatiotemporal graph that shares
+information between buoys, improves the full applied pipeline for ocean waves.
 Across imputation, forecasting, and wave-energy estimation, the answer is yes,
 and consistently for the same reason: the graph pays off where spatial structure
 is available to exploit. It is the best imputer wherever missingness is
-structured---whole-station outages and contiguous blocks---while isolated random
+structured (whole-station outages and contiguous blocks), while isolated random
 gaps are easy enough that simple interpolation suffices; it adds real 12--24~h
 forecast skill over
 persistence and autoregression; and it wins by its widest margin on wave power,
 where the $H^{2}$ nonlinearity amplifies its superior height forecasts. We also
-report where it does not help---a within-noise basin-aware graph and an
-underpowered connectivity effect---so that the benchmark is honest about its
+report where it does not help (a within-noise basin-aware graph and an
+underpowered connectivity effect), so that the benchmark is honest about its
 limits. Future work should extend the panel, compare against operational wave
 models, and add calibrated uncertainty to the forecasts.
 
