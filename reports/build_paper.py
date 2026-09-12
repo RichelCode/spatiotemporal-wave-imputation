@@ -152,6 +152,29 @@ for meth, mn in FMETH:
     rows.append(f"{mn} & " + " & ".join(cells) + r" \\")
 T5 = "\n".join(rows)
 
+# ---- ratio-sweep tables: methods x {MCAR,Block} x {5,10,20,30,50}, per target ----
+SWEEP_RATIOS = ["5", "10", "20", "30", "50"]
+
+
+def sweep_table(tgt):
+    cfgs = [f"mcar_{r}" for r in SWEEP_RATIOS] + [f"block_{r}" for r in SWEEP_RATIOS]
+    colvals = {c: {mn: imp_mae(mk, c, tgt)[0] for mk, mn in IMP_METHODS} for c in cfgs}
+    best = {c: min(colvals[c], key=colvals[c].get) for c in cfgs}
+    rows = []
+    for mk, mn in IMP_METHODS:
+        cells = []
+        for c in cfgs:
+            cell = f"{colvals[c][mn]:.3f}"
+            if best[c] == mn:
+                cell = f"\\textbf{{{cell}}}"
+            cells.append(cell)
+        rows.append(f"{mn} & " + " & ".join(cells) + r" \\")
+    return "\n".join(rows)
+
+
+T_SWEEP_W = sweep_table("WVHT")
+T_SWEEP_A = sweep_table("APD")
+
 # ---- prose numbers (all pulled from CSVs; panel constants from the tensor axes) ----
 P = {
     "grin_so_wvht": fmt(*imp_mae("grin", "station_outage_full", "WVHT")),
@@ -177,7 +200,8 @@ P = {
 }
 
 tex = (R / "_paper_template.tex").read_text()
-for key, val in {"T1": T1, "T2": T2, "T3": T3, "T4": T4, "T5": T5}.items():
+for key, val in {"T1": T1, "T2": T2, "T3": T3, "T4": T4, "T5": T5,
+                 "T_SWEEP_W": T_SWEEP_W, "T_SWEEP_A": T_SWEEP_A}.items():
     tex = tex.replace(f"@{key}@", val)
 for k, v in P.items():
     tex = tex.replace(f"@{k}@", v)

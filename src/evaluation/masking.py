@@ -209,7 +209,7 @@ def default_suite() -> list[tuple[str, dict, int]]:
     for seed in (0, 1, 2):
         specs.append(("station_outage", {"victim_fraction": 0.10, "duration_hours": None}, seed))
         specs.append(("station_outage", {"victim_fraction": 0.10, "duration_hours": 720}, seed))
-        for ratio in (0.1, 0.3, 0.5):
+        for ratio in (0.05, 0.1, 0.2, 0.3, 0.5):
             specs.append(("mcar", {"ratio": ratio}, seed))
             specs.append(("block", {"ratio": ratio}, seed))
     return specs
