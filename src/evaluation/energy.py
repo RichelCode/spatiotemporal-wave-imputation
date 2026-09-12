@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_CSV = PROJECT_ROOT / "reports" / "energy_forecast_results.csv"
-HORIZONS = [12, 24]
+HORIZONS = [1, 3, 6, 12, 24]
 METHODS = ["persistence", "ar24", "graphwavenet"]
 
 

@@ -60,8 +60,8 @@ GWN_CHECKPOINT = PROCESSED_DIR / "gwn_forecast_checkpoint.pt"   # gitignored (*.
 FORECAST_DEEP_CSV = PROJECT_ROOT / "reports" / "forecast_deep_results.csv"
 
 W_IN = INPUT_WINDOW          # input history window (24h) = harness leakage window
-MODEL_HORIZON = 24           # trained horizon; score steps 12 and 24
-EVAL_HORIZONS = [12, 24]
+MODEL_HORIZON = 24           # trained horizon; a 24-step forecast covers all shorter h
+EVAL_HORIZONS = [1, 3, 6, 12, 24]
 TARGET_NAMES = ["WVHT", "APD"]
 
 
@@ -362,11 +362,38 @@ def run_full_evaluation() -> int:
     return 0
 
 
+def rescore_from_checkpoint() -> int:
+    """Re-score the committed GraphWaveNet checkpoint at EVAL_HORIZONS without retraining.
+
+    The model was trained to forecast MODEL_HORIZON=24 steps, so every shorter horizon
+    (1/3/6/12) is read from the same forecast at inference cost only.
+    """
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    config = load_config()
+    meta = load_meta()
+    model = GraphForecaster(config, device=torch.device("cpu"), adjacency="adjacency_knn_basin",
+                            horizon=MODEL_HORIZON).load_checkpoint(GWN_CHECKPOINT)
+    results = score_forecaster(model, meta, EVAL_HORIZONS, sample=None)
+    df = pd.DataFrame(results)[["method", "target", "horizon", "n_origins",
+                                "MAE", "RMSE", "skill_vs_persistence"]]
+    FORECAST_DEEP_CSV.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(FORECAST_DEEP_CSV, index=False)
+    print(f"Wrote {FORECAST_DEEP_CSV} (horizons {EVAL_HORIZONS}, checkpoint reuse)")
+    for r in results:
+        print(f"  {r['target']} h={r['horizon']:>2d}: MAE={r['MAE']:.4f} "
+              f"skill={r['skill_vs_persistence']:+.3f} (n={r['n_origins']:,})")
+    return 0
+
+
 def main() -> int:
     import argparse
     parser = argparse.ArgumentParser(description="Deep spatiotemporal forecaster.")
     parser.add_argument("--full", action="store_true", help="Full run (fit, checkpoint, score full set).")
+    parser.add_argument("--rescore", action="store_true",
+                        help="Re-score the saved checkpoint at EVAL_HORIZONS (no retraining).")
     args = parser.parse_args()
+    if args.rescore:
+        return rescore_from_checkpoint()
     return run_full_evaluation() if args.full else run_smoke()
 
 
