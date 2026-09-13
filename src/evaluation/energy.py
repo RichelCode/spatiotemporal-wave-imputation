@@ -40,6 +40,7 @@ from ..models.forecast_baselines import AR_ORDER, fit_ar_direct
 from ..models.forecast_deep import (
     GWN_CHECKPOINT, MODEL_HORIZON, W_IN, GraphForecaster, causal_fill_norm,
 )
+from ..models.forecast_models import REGISTRY as FCST_REGISTRY, _ckpt as _fcst_ckpt, make_forecaster
 from .forecast_eval import (
     RAW_TENSOR_NPZ, complete_tensor_with_grin, mae, rmse, skill_vs_persistence,
     valid_origin_mask,
@@ -85,10 +86,20 @@ def run() -> int:
     obs = ~np.isnan(raw)
     completed = complete_tensor_with_grin().astype(np.float64)  # physical, for AR fits
     causal = causal_fill_norm()                                 # leakage-safe GWN input
-    gwn = GraphForecaster(config, device=torch.device("cpu"), adjacency="adjacency_knn_basin",
-                          horizon=MODEL_HORIZON).load_checkpoint(GWN_CHECKPOINT)
+    # Model forecasters: GraphWaveNet plus every registered model with a checkpoint.
+    model_fcst = {"graphwavenet": GraphForecaster(
+        config, device=torch.device("cpu"), adjacency="adjacency_knn_basin",
+        horizon=MODEL_HORIZON).load_checkpoint(GWN_CHECKPOINT)}
+    for mname in FCST_REGISTRY:
+        ck = _fcst_ckpt(mname)
+        if ck.exists():
+            model_fcst[mname] = make_forecaster(mname, config, device=torch.device("cpu")).load_checkpoint(ck)
+        else:
+            logger.warning("energy: no checkpoint for %s; skipping", mname)
+    methods_list = ["persistence", "ar24"] + list(model_fcst)
 
     print(f"energy: P = {coeff} * H^2 * ({alpha} * APD) kW/m  (alpha-invariant rankings/skill)")
+    print(f"energy methods: {methods_list}")
     records = []
     for h in HORIZONS:
         common = valid_origin_mask(obs[:, :, wf], test_start, test_end, W_IN, h) \
@@ -103,15 +114,16 @@ def run() -> int:
                      "ar24": (_ar_forecast(completed, raw, ts, ss, wf, train_end, h),
                               _ar_forecast(completed, raw, ts, ss, af, train_end, h))}
         uniq = np.unique(ts)
-        preds = gwn.predict_origins(causal, uniq)
         pos = np.searchsorted(uniq, ts)
-        forecasts["graphwavenet"] = (
-            inverse_transform(preds[pos, h - 1, ss, wf], wf, meta),
-            inverse_transform(preds[pos, h - 1, ss, af], af, meta))
+        for mname, fc in model_fcst.items():
+            preds = fc.predict_origins(causal, uniq)
+            forecasts[mname] = (
+                inverse_transform(preds[pos, h - 1, ss, wf], wf, meta),
+                inverse_transform(preds[pos, h - 1, ss, af], af, meta))
 
         p_pers = wave_power(*forecasts["persistence"], coeff, alpha)
         mae_pers = mae(p_pers, p_true)
-        for name in METHODS:
+        for name in methods_list:
             hh, tt = forecasts[name]
             p_hat = wave_power(hh, tt, coeff, alpha)
             m = mae(p_hat, p_true)
@@ -122,18 +134,17 @@ def run() -> int:
     df = pd.DataFrame(records)
     RESULTS_CSV.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(RESULTS_CSV, index=False)
-    saved = _make_figure(df)
 
     print("\n" + "=" * 62)
     print("WAVE-ENERGY FORECAST (kW/m; leakage-safe; both targets observed)")
     print("=" * 62)
     print(f"{'method':16s}{'h':>4s}{'n':>10s}{'MAE_kW':>10s}{'RMSE_kW':>10s}{'skill':>9s}")
     for h in HORIZONS:
-        for name in METHODS:
+        for name in methods_list:
             r = df[(df.method == name) & (df.horizon == h)].iloc[0]
             print(f"{name:16s}{h:>4d}{int(r['n_origins']):>10,d}{r['MAE_kw']:>10.3f}"
                   f"{r['RMSE_kw']:>10.3f}{r['skill_vs_persistence']:>+9.3f}")
-    print(f"\nWrote {RESULTS_CSV} and {', '.join(saved)}")
+    print(f"\nWrote {RESULTS_CSV}. Run reports/make_forecast_plots.py to refresh fig11.")
     return 0
 
 
