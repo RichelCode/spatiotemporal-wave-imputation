@@ -99,6 +99,53 @@ class DLinearModel(nn.Module):
         return out.reshape(B, N, Fd, self.horizon).permute(0, 3, 1, 2)
 
 
+class PatchTSTModel(nn.Module):
+    """PatchTST: channel-independent patched transformer encoder (Nie et al. 2023)."""
+
+    def __init__(self, win: int, horizon: int, patch_len: int = 8, stride: int = 8,
+                 d_model: int = 64, nhead: int = 4, n_layers: int = 3, dropout: float = 0.1, **_):
+        super().__init__()
+        self.win, self.horizon = win, horizon
+        self.patch_len, self.stride = patch_len, stride
+        self.num_patches = (win - patch_len) // stride + 1
+        self.embed = nn.Linear(patch_len, d_model)
+        self.pos = nn.Parameter(torch.randn(1, self.num_patches, d_model) * 0.02)
+        layer = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward=2 * d_model,
+                                           dropout=dropout, batch_first=True)
+        self.encoder = nn.TransformerEncoder(layer, n_layers)
+        self.head = nn.Linear(self.num_patches * d_model, horizon)
+
+    def forward(self, x):  # [B, win, N, F] -> [B, horizon, N, F]
+        B, L, N, Fd = x.shape
+        z = x.permute(0, 2, 3, 1).reshape(B * N * Fd, L)                 # [C, win], C = B*N*F
+        patches = z.unfold(dimension=1, size=self.patch_len, step=self.stride)  # [C, P, patch_len]
+        h = self.embed(patches) + self.pos                              # [C, P, d_model]
+        h = self.encoder(h).reshape(h.shape[0], -1)                     # [C, P*d_model]
+        out = self.head(h)                                              # [C, horizon]
+        return out.reshape(B, N, Fd, self.horizon).permute(0, 3, 1, 2)
+
+
+class ITransformerModel(nn.Module):
+    """iTransformer: attention over inverted (variate) tokens (Liu et al. 2024)."""
+
+    def __init__(self, win: int, horizon: int, d_model: int = 64, nhead: int = 4,
+                 n_layers: int = 3, dropout: float = 0.1, **_):
+        super().__init__()
+        self.win, self.horizon = win, horizon
+        self.embed = nn.Linear(win, d_model)                            # each variate series -> token
+        layer = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward=2 * d_model,
+                                           dropout=dropout, batch_first=True)
+        self.encoder = nn.TransformerEncoder(layer, n_layers)
+        self.head = nn.Linear(d_model, horizon)
+
+    def forward(self, x):  # [B, win, N, F] -> [B, horizon, N, F]
+        B, L, N, Fd = x.shape
+        z = x.permute(0, 2, 3, 1).reshape(B, N * Fd, L)                 # [B, C, win]; each variate = token
+        h = self.encoder(self.embed(z))                                # attention over C variates
+        out = self.head(h)                                             # [B, C, horizon]
+        return out.reshape(B, N, Fd, self.horizon).permute(0, 3, 1, 2)
+
+
 # ===========================================================================
 # forecaster harness (non-graph; mirrors forecast_deep.GraphForecaster)
 # ===========================================================================
@@ -111,9 +158,11 @@ class TemporalForecaster:
                  horizon: int = MODEL_HORIZON, win: int = W_IN,
                  epochs: int | None = None, patience: int | None = -1,
                  batch_size: int = 32, lr: float | None = None, seed: int | None = None,
-                 arch: dict | None = None):
+                 arch: dict | None = None, adjacency: str | None = None,
+                 graph_forward: bool = False, train_stride: int = 1):
         deep = config["deep"]
         self.name = name
+        self.train_stride = int(train_stride)
         self._build_fn = build_fn
         self.win, self.horizon = int(win), int(horizon)
         self.lr = float(lr if lr is not None else deep["learning_rate"])
@@ -125,12 +174,22 @@ class TemporalForecaster:
         self.arch = arch or {}
         self.target_idx = [load_meta()["feature_names"].index(t) for t in TARGET_NAMES]
         self.model = None
+        # graph handling: DCRNN uses edges in forward; AGCRN only needs n_nodes.
+        self.adjacency = adjacency
+        self.graph_forward = bool(graph_forward)
+        if adjacency is not None:
+            self.edge_index, self.edge_weight, self.n_nodes = load_graph_edges(adjacency)
+        else:
+            self.n_nodes = None
 
-    # -- graph hook (overridden by the graph subclass) --
     def _prep_graph(self):
-        pass
+        if self.adjacency is not None:
+            self.ei = self.edge_index.to(self.device)
+            self.ew = self.edge_weight.to(self.device)
 
     def _forward(self, x):
+        if self.graph_forward:
+            return self.model(x, self.ei, self.ew)
         return self.model(x)
 
     def _build(self, F):
@@ -148,7 +207,7 @@ class TemporalForecaster:
         if self.device.type == "mps" and hasattr(torch, "mps"):
             torch.mps.manual_seed(self.seed)
 
-    def fit(self, completed_norm, train_end, val_start, val_end):
+    def fit(self, completed_norm, train_end, val_start, val_end, ckpt_path=None):
         self._seed_all()
         dev = self.device
         F = completed_norm.shape[2]
@@ -157,7 +216,7 @@ class TemporalForecaster:
         data = torch.tensor(completed_norm, dtype=torch.float32, device=dev)
         opt = torch.optim.Adam(self.model.parameters(), lr=self.lr)
         tgt = self.target_idx
-        train_o = torch.arange(self.win - 1, train_end - self.horizon, device=dev)
+        train_o = torch.arange(self.win - 1, train_end - self.horizon, self.train_stride, device=dev)
         val_o = torch.arange(val_start, val_end - self.horizon, device=dev)
 
         best, best_state, bad = float("inf"), None, 0
@@ -179,6 +238,8 @@ class TemporalForecaster:
             logger.info("[%s] epoch %d - train %.4f - val %.4f", self.name, epoch, running / max(1, nb), vloss)
             if vloss < best:
                 best, best_state, bad = vloss, copy.deepcopy(self.model.state_dict()), 0
+                if ckpt_path is not None:
+                    torch.save(best_state, ckpt_path)   # persist best-so-far (crash-safe)
             elif self.patience is not None:
                 bad += 1
                 if bad >= self.patience:
@@ -230,8 +291,37 @@ def _dlinear_build(win, horizon, n_features, **_):
     return DLinearModel(win=win, horizon=horizon)
 
 
+def _patchtst_build(win, horizon, n_features, **_):
+    return PatchTSTModel(win=win, horizon=horizon)
+
+
+def _itransformer_build(win, horizon, n_features, **_):
+    return ITransformerModel(win=win, horizon=horizon)
+
+
+def _dcrnn_build(win, horizon, n_features, n_nodes, **_):
+    from tsl.nn.models.stgn import DCRNNModel
+    return DCRNNModel(input_size=n_features, output_size=n_features, horizon=horizon,
+                      hidden_size=32, n_layers=1, kernel_size=2)
+
+
+def _agcrn_build(win, horizon, n_features, n_nodes, **_):
+    from tsl.nn.models.stgn import AGCRNModel
+    return AGCRNModel(input_size=n_features, output_size=n_features, horizon=horizon,
+                      n_nodes=n_nodes, hidden_size=64, emb_size=10, n_layers=1)
+
+
+# train_stride: DLinear is cheap and uses every origin; the transformer and graph
+# models train on a 1-in-3 origin subsample for compute tractability on CPU
+# (adjacent hourly origins are highly correlated). Disclosed in the paper setup.
 REGISTRY = {
-    "dlinear": dict(build=_dlinear_build, epochs=40, batch_size=64, arch={}),
+    "dlinear": dict(build=_dlinear_build, epochs=40, batch_size=64, arch={}, train_stride=1),
+    "patchtst": dict(build=_patchtst_build, epochs=20, batch_size=32, arch={}, train_stride=3),
+    "itransformer": dict(build=_itransformer_build, epochs=20, batch_size=32, arch={}, train_stride=3),
+    "dcrnn": dict(build=_dcrnn_build, epochs=20, batch_size=16, arch={}, train_stride=3,
+                  adjacency="adjacency_knn_basin", graph_forward=True),
+    "agcrn": dict(build=_agcrn_build, epochs=20, batch_size=16, arch={}, train_stride=3,
+                  adjacency="adjacency_knn_basin", graph_forward=False),
 }
 
 
@@ -240,7 +330,10 @@ def make_forecaster(name: str, config, device=None, **over):
     return TemporalForecaster(name, spec["build"], config, device=device,
                               epochs=over.get("epochs", spec.get("epochs")),
                               batch_size=over.get("batch_size", spec.get("batch_size", 32)),
-                              arch=spec.get("arch", {}))
+                              arch=spec.get("arch", {}),
+                              adjacency=spec.get("adjacency"),
+                              graph_forward=spec.get("graph_forward", False),
+                              train_stride=spec.get("train_stride", 1))
 
 
 # ===========================================================================
@@ -263,7 +356,7 @@ def run_model(name: str, rescore: bool = False) -> int:
         completed = norm_completed()
         print(f"[{name}] training on CPU (seed={model.seed}, epochs={model.epochs}, win={W_IN}, horizon={MODEL_HORIZON})")
         t0 = time.time()
-        model.fit(completed, train_end, val_start, val_end)
+        model.fit(completed, train_end, val_start, val_end, ckpt_path=_ckpt(name))
         model.save_checkpoint()
         print(f"[{name}] fit {(time.time() - t0) / 60:.1f} min; checkpoint saved")
 
