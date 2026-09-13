@@ -210,6 +210,11 @@ P = {
     "abl_within": str(ablation_within), "abl_total": str(ablation_total),
     "nw": str(n_w), "na": str(n_a),
     "pers1_wvht": f"{fmae('persistence', 'WVHT', 1)[0]:.3f}",
+    # two-tier boundaries at h=24 (WVHT): best temporal vs worst graph
+    "temp_max24": f"{max(fmae(m, 'WVHT', 24)[1] for m in ['dlinear', 'patchtst', 'itransformer', 'ar24']):+.3f}",
+    "graph_min24": f"{min(fmae(m, 'WVHT', 24)[1] for m in ['dcrnn', 'agcrn', 'graphwavenet']):+.3f}",
+    "agcrn24_w": f"{fmae('agcrn', 'WVHT', 24)[1]:+.3f}", "agcrn1_w": f"{fmae('agcrn', 'WVHT', 1)[1]:+.3f}",
+    "itr24_w": f"{fmae('itransformer', 'WVHT', 24)[1]:+.3f}",
     "gwn1_w": f"{fmae('graphwavenet', 'WVHT', 1)[1]:+.3f}", "gwn6_w": f"{fmae('graphwavenet', 'WVHT', 6)[1]:+.3f}",
     "gwn12_w": f"{fmae('graphwavenet', 'WVHT', 12)[1]:+.3f}", "gwn24_w": f"{fmae('graphwavenet', 'WVHT', 24)[1]:+.3f}",
     "gwn12_a": f"{fmae('graphwavenet', 'APD', 12)[1]:+.3f}", "gwn24_a": f"{fmae('graphwavenet', 'APD', 24)[1]:+.3f}",
@@ -217,6 +222,9 @@ P = {
     "ar12_w": f"{fmae('ar24', 'WVHT', 12)[1]:+.3f}", "ar24_w": f"{fmae('ar24', 'WVHT', 24)[1]:+.3f}",
     "en_gwn12": f"{emae('graphwavenet', 12)[1]:+.3f}", "en_gwn24": f"{emae('graphwavenet', 24)[1]:+.3f}",
     "en_ar12": f"{emae('ar24', 12)[1]:+.3f}", "en_ar24": f"{emae('ar24', 24)[1]:+.3f}",
+    "en_temp_max24": f"{max(emae(m, 24)[1] for m in ['dlinear', 'patchtst', 'itransformer', 'ar24']):+.3f}",
+    "en_graph_min24": f"{min(emae(m, 24)[1] for m in ['dcrnn', 'agcrn', 'graphwavenet']):+.3f}",
+    "en_agcrn24": f"{emae('agcrn', 24)[1]:+.3f}",
 }
 
 tex = (R / "_paper_template.tex").read_text()
