@@ -32,6 +32,8 @@ conn = pd.read_csv(R / "connectivity_analysis.csv")
 sweep = pd.read_csv(R / "forecast_horizon_sweep.csv")
 fdeep = pd.read_csv(R / "forecast_deep_results.csv")
 energy = pd.read_csv(R / "energy_forecast_results.csv")
+prop_sum = pd.read_csv(R / "propagation_summary.csv")
+prop_pairs = pd.read_csv(R / "propagation_pairs.csv")
 
 
 def imp_mae(method, cfg, tgt):
@@ -225,6 +227,15 @@ P = {
     "en_temp_max24": f"{max(emae(m, 24)[1] for m in ['dlinear', 'patchtst', 'itransformer', 'ar24']):+.3f}",
     "en_graph_min24": f"{min(emae(m, 24)[1] for m in ['dcrnn', 'agcrn', 'graphwavenet']):+.3f}",
     "en_agcrn24": f"{emae('agcrn', 24)[1]:+.3f}",
+    # swell-propagation analysis (src/features/propagation.py)
+    "prop_rho": f"{prop_sum[prop_sum.scope == 'all_pairs'].spearman_rho.iloc[0]:.2f}",
+    "prop_n": f"{int(prop_sum[prop_sum.scope == 'all_pairs'].n.iloc[0]):,}".replace(",", "{,}"),
+    "prop_bound": f"{prop_sum[prop_sum.scope == 'all_pairs'].causal_bound_frac.iloc[0] * 100:.0f}",
+    "prop_wc_rho": f"{prop_sum[prop_sum.scope == 'basin:W. Coast'].spearman_rho.iloc[0]:.2f}",
+    "prop_edges": str(int((prop_pairs.coupling >= 0.5).sum())),
+    "prop_nodes": str(len(set(prop_pairs.loc[prop_pairs.coupling >= 0.5, 'up']) |
+                          set(prop_pairs.loc[prop_pairs.coupling >= 0.5, 'dn']))),
+    "prop_medlag": f"{prop_pairs.loc[prop_pairs.coupling >= 0.5, 'obs_lag_h'].median():.0f}",
 }
 
 tex = (R / "_paper_template.tex").read_text()

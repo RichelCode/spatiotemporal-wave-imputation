@@ -74,7 +74,7 @@ def fig_forecast(df) -> list[str]:
         ax.set_ylabel(f"{tgt} skill vs persistence")
         ax.set_title(f"{tgt} ({unit[tgt]})")
         ax.legend(fontsize=8, ncol=2)
-    fig.suptitle("Figure 10. Forecast skill vs horizon", fontweight="bold")
+    fig.suptitle("Forecast skill vs horizon", fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     return _save(fig, "fig10_horizon_skill")
 
@@ -93,7 +93,7 @@ def fig_energy() -> list[str]:
     ax.set_xticks(HORIZONS)
     ax.set_xlabel("forecast horizon (hours)")
     ax.set_ylabel("wave-energy skill vs persistence")
-    ax.set_title("Figure 11. Wave-energy forecast skill vs horizon", fontweight="bold")
+    ax.set_title("Wave-energy forecast skill vs horizon", fontweight="bold")
     ax.legend(fontsize=9)
     fig.tight_layout()
     return _save(fig, "fig11_energy_forecast")
